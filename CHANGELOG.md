@@ -4,6 +4,14 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
+## [0.5.0] - 2026-11-14
+
+### Added
+
+- `preview` ends with a suggested `run` call based on the archive: TIFF files
+  are included as scans (`--images tif,tiff`), other images (JPG, PNG, …) are
+  listed with a hint, given options (`--lang`, `-j`) are kept.
+
 ## [0.4.0] - 2026-11-14
 
 ### Added

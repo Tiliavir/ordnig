@@ -50,6 +50,31 @@ class Plan(unittest.TestCase):
         self.assertNotIn("Briefe/y.pdf", names)
 
 
+class Suggest(unittest.TestCase):
+    def test_tiff_is_suggested_photos_only_hinted(self):
+        from collections import Counter
+        cmd, hints = migrate.suggest(set(), "deu+eng", None, Counter(tif=3, jpg=40), planned=5)
+        self.assertEqual(cmd, "ordnig run --images tif")
+        self.assertIn("3 TIFF-Dateien", hints[0])
+        self.assertIn("40 .jpg", hints[1]); self.assertIn("--images jpg,tif", hints[1])
+
+    def test_keeps_given_options(self):
+        from collections import Counter
+        cmd, _ = migrate.suggest({"png"}, "deu+frk", 4, Counter(tiff=1), planned=1)
+        self.assertEqual(cmd, "ordnig run --images png,tiff --lang deu+frk -j 4")
+
+    def test_nothing_to_do(self):
+        from collections import Counter
+        cmd, hints = migrate.suggest(set(), "deu+eng", None, Counter(), planned=0)
+        self.assertIsNone(cmd); self.assertIn("Nichts zu tun", hints[0])
+
+    def test_count_images_skips_planned_and_state(self):
+        root = Path(tempfile.mkdtemp())
+        for f in ["a.tif", "b.TIFF", "c.jpg", "d.png", ".ordnig/x.tif"]:
+            p = root / f; p.parent.mkdir(parents=True, exist_ok=True); p.write_text("x")
+        self.assertEqual(dict(migrate.count_images(root, {"png"}, set(), set())), {"tif": 1, "tiff": 1, "jpg": 1})
+
+
 class Tree(unittest.TestCase):
     def test_render(self):
         out = migrate.render_tree("ablage", {"A/x.doc": "→ x.odt", "b.pdf": "→ b_pdfa.pdf"})

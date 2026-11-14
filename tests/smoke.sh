@@ -26,7 +26,9 @@ cp konto.xls "$ORDNIG_SRC/Briefe/konto.xls"
 sha_before=$(sha256sum "$ORDNIG_SRC/Briefe/kuendigung.doc")
 
 ordnig version >/dev/null
-ordnig preview >/dev/null
+ordnig preview > "$W/preview.txt"
+grep -q 'Vorschlag: ordnig run' "$W/preview.txt" || { cat "$W/preview.txt"; echo "FAIL: no run suggestion"; exit 1; }
+grep -q 'Falls Scans: --images png' "$W/preview.txt" || { cat "$W/preview.txt"; echo "FAIL: png not hinted"; exit 1; }
 [[ -z $(find "$ORDNIG_SRC" -newer "$ORDNIG_SRC/Briefe/konto.xls" -type f) ]] || { echo "FAIL: preview wrote files"; exit 1; }
 
 ordnig run --images png
