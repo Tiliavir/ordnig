@@ -15,11 +15,13 @@ soffice --headless --convert-to doc brief.txt >/dev/null
 soffice --headless --convert-to rtf brief.txt >/dev/null
 soffice --headless --convert-to xls konto.csv >/dev/null
 soffice --headless --convert-to pdf scan.txt >/dev/null
+soffice --headless --convert-to 'pdf:writer_pdf_Export:{"SelectPdfVersion":{"type":"long","value":"2"}}' --outdir pdfa brief.txt >/dev/null
 # image-only "scan": render text PDF to a 300 dpi bitmap, wrap it again
 gs -q -dNOPAUSE -dBATCH -sDEVICE=pnggray -r300 -o scan.png scan.pdf
 img2pdf scan.png -o "$ORDNIG_SRC/Scans/scan_ohne_text.pdf"
 cp scan.png "$ORDNIG_SRC/Scans/rechnung.png"
 cp brief.doc "$ORDNIG_SRC/Briefe/kuendigung.doc"
+cp pdfa/brief.pdf "$ORDNIG_SRC/Briefe/schon_pdfa.pdf"      # already PDF/A with text -> must stay alone
 cp brief.doc "$ORDNIG_SRC/Briefe/doppelt.doc"
 cp brief.rtf "$ORDNIG_SRC/Briefe/doppelt.rtf"
 cp konto.xls "$ORDNIG_SRC/Briefe/konto.xls"
@@ -39,6 +41,10 @@ for f in Briefe/kuendigung.odt Briefe/kuendigung.pdf Briefe/konto.ods Briefe/kon
   [[ -s $ORDNIG_SRC/$f ]] || fail "missing $f"
 done
 [[ $(sha256sum "$ORDNIG_SRC/Briefe/kuendigung.doc") == "$sha_before" ]] || fail "original changed"
+[[ ! -e $ORDNIG_SRC/Briefe/schon_pdfa_pdfa.pdf ]] || fail "existing PDF/A was converted again"
+python3 -I -c 'import pikepdf,sys; p = pikepdf.open(sys.argv[1]); sys.exit(0 if "/StructTreeRoot" in p.Root else 1)' \
+  "$ORDNIG_SRC/Briefe/kuendigung.pdf" || fail "office PDF lost its tagging"
+grep -q 'Langsamste Dateien' "$ORDNIG_OUT"/*-migration.md || fail "timing missing in report"
 
 ocr=$(gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Scans/scan_ohne_text_pdfa.pdf")
 grep -q 4711 <<<"$ocr" || fail "OCR text missing"

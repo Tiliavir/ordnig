@@ -21,7 +21,8 @@ ordnig – checks an old file archive and adds archival copies next to the origi
 Options for run (passed to the converter):
   --images tif,tiff  also OCR scanned images into PDF/A
   --lang deu+eng     Tesseract languages (default deu+eng; also: frk, fra, ita)
-  -j N               parallel jobs
+  --fix-scans        rotate and deskew scans (about 40% more OCR time)
+  -j N               files in parallel (default: number of CPUs)
 
 Mounts: archive -> $SRC, reports -> $OUT
 EOF

@@ -35,7 +35,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
 # 2. Convert (work on a snapshot or copy first)
 docker run --rm --user "$(id -u):$(id -g)" \
   -v /volume1/ablage:/ablage -v "$PWD/report:/report" \
-  ghcr.io/tiliavir/ordnig run --images tif,tiff
+  ghcr.io/tiliavir/ordnig run --images tif,tiff   # preview suggests the options
 
 # 3. Later: check for bit rot
 docker run --rm -v /volume1/ablage:/ablage:ro -v "$PWD/report:/report" \

@@ -43,13 +43,15 @@ ODF_FOR = {**{e: "odt" for e in TEXT - {"txt"}}, **{e: "ods" for e in CALC - {"d
            **{e: "odp" for e in IMPRESS}}
 PDF_FILTER = {"odt": "writer_pdf_Export", "ods": "calc_pdf_Export", "odp": "impress_pdf_Export"}
 SKIP_DIRS = {"@eaDir", "#recycle", ".git", ".ordnig"}
-LOG_FIELDS = ["quelle", "aktion", "ziel", "status", "pdfa", "hinweis", "zeit"]
+LOG_FIELDS = ["quelle", "aktion", "ziel", "status", "pdfa", "hinweis", "zeit", "sekunden"]
+VERA_BATCH = 50
 
 
 # ----------------------------------------------------------------- Hilfen
-def run(cmd, timeout=900, **kw):
+def run(cmd, timeout=900, tail=1500, **kw):
     r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout, **kw)
-    return r.returncode, (r.stdout + r.stderr)[-1500:]
+    out = r.stdout + r.stderr
+    return r.returncode, out[-tail:] if tail else out
 
 RESERVED = set()
 
@@ -79,9 +81,37 @@ def lo_pdfa_filter(kind):
     opts = '{"SelectPdfVersion":{"type":"long","value":"2"},"UseTaggedPDF":{"type":"boolean","value":"true"}}'
     return f"pdf:{PDF_FILTER[kind]}:{opts}"
 
-def ocr_pdfa(src_pdf: Path, dst_pdf: Path, lang: str, image_input=False):
-    cmd = ["ocrmypdf", "--output-type", "pdfa-2", "-l", lang, "--rotate-pages", "--deskew",
-           "--optimize", "1", "-q"]
+def page_has_text(page, depth=0):
+    """Text = Schriften in den Ressourcen der Seite oder ihrer Form-XObjects."""
+    res = page.get("/Resources") if hasattr(page, "get") else None
+    if res is None:
+        return False
+    if res.get("/Font"):
+        return True
+    if depth < 3:
+        for xo in (res.get("/XObject") or {}).values():
+            if xo.get("/Subtype") == "/Form" and page_has_text(xo, depth + 1):
+                return True
+    return False
+
+def inspect_pdf(pdf: Path):
+    """(Seiten, Seiten ohne Text, PDF/A-Kennung wie '2u' oder ''). Wirft bei Verschlüsselung/Defekt."""
+    import pikepdf
+    with pikepdf.open(pdf) as p:
+        pages = len(p.pages)
+        no_text = sum(1 for pg in p.pages if not page_has_text(pg.obj))
+        part = conf = ""
+        try:
+            m = p.open_metadata()
+            part, conf = str(m.get("pdfaid:part", "")), str(m.get("pdfaid:conformance", ""))
+        except Exception:
+            pass
+    return pages, no_text, (part + conf.lower()) if part else ""
+
+def ocr_pdfa(src_pdf: Path, dst_pdf: Path, lang: str, image_input=False, fix_scans=False, ocr_jobs=1):
+    cmd = ["ocrmypdf", "--output-type", "pdfa-2", "-l", lang, "--jobs", str(ocr_jobs), "--optimize", "1", "-q"]
+    if fix_scans:
+        cmd += ["--rotate-pages", "--deskew"]   # Ausrichtung/Schräglage: ~40 % mehr Zeit
     cmd += ["--image-dpi", "300"] if image_input else ["--skip-text"]
     code, log = run(cmd + [str(src_pdf), str(dst_pdf)], timeout=3600)
     # 6 = bereits Text vorhanden (nur ohne --skip-text), 10 = PDF/A-Konvertierung unvollständig
@@ -100,10 +130,64 @@ def set_conformance(pdf: Path, level: str):
 def verapdf(pdf: Path, flavour: str):
     if not shutil.which("verapdf"):
         return None
-    code, out = run(["verapdf", "--flavour", flavour, str(pdf)], timeout=1800)
+    code, out = run(["verapdf", "--flavour", flavour, str(pdf)], timeout=1800, tail=None)
     if 'isCompliant="true"' in out or re.search(r"\bPASS\b", out):
         return True
     return False
+
+def parse_verapdf(xml_text: str):
+    """veraPDF-XML (mehrere Jobs) -> {Dateiname: konform?}."""
+    import xml.etree.ElementTree as ET
+    out = {}
+    root = ET.fromstring(xml_text[xml_text.index("<"):])
+    for job in root.iter():
+        if not job.tag.endswith("job"):
+            continue
+        name = next((e.text for e in job.iter() if e.tag.endswith("name") and e.text), None)
+        rep = next((e for e in job.iter() if e.tag.endswith("validationReport")), None)
+        if name:
+            out[Path(name).name] = rep is not None and rep.get("isCompliant") == "true"
+    return out
+
+def verapdf_batch(pdfs, flavour):
+    """Ein JVM-Start für viele Dateien. Fallback auf Einzelaufrufe, wenn die Ausgabe nicht lesbar ist."""
+    if not pdfs:
+        return {}
+    code, out = run(["verapdf", "--flavour", flavour, *map(str, pdfs)], timeout=3600, tail=None)
+    try:
+        res = parse_verapdf(out)
+        if all(p.name in res for p in pdfs):
+            return {p: res[p.name] for p in pdfs}
+    except Exception:
+        pass
+    return {p: bool(verapdf(p, flavour)) for p in pdfs}
+
+def validate_all(targets, progress_cb=lambda i, n: None):
+    """targets: Liste fertiger PDFs (deklariert 2b). Prüft Kopien auf 2u, dann ggf. 2b, und ersetzt
+    das Ziel nur durch genau die geprüfte Kopie. -> {target: (pdfa, hinweis)}"""
+    results = {}
+    for i in range(0, len(targets), VERA_BATCH):
+        chunk = targets[i:i + VERA_BATCH]
+        progress_cb(i, len(targets))
+        with tempfile.TemporaryDirectory(prefix="vera_") as td:
+            copies = {}
+            for k, t in enumerate(chunk):
+                c = Path(td) / f"{k:04d}.pdf"
+                shutil.copy2(t, c); set_conformance(c, "U"); copies[c] = t
+            ok_u = verapdf_batch(list(copies), "2u")
+            failed = [c for c, ok in ok_u.items() if not ok]
+            for c in failed:
+                set_conformance(c, "B")
+            ok_b = verapdf_batch(failed, "2b")
+            for c, t in copies.items():
+                if ok_u[c]:
+                    st = t.stat(); shutil.copyfile(c, t); os.utime(t, (st.st_atime, st.st_mtime))
+                    results[t] = ("2u", "veraPDF bestanden")
+                elif ok_b[c]:
+                    results[t] = ("2b", "2u nicht erfüllt, 2b bestanden")
+                else:
+                    results[t] = ("ungültig", "veraPDF: weder 2u noch 2b")
+    return results
 
 def finalize_pdfa(pdf: Path):
     """Deklariert 2u, wenn veraPDF zustimmt, sonst 2b. Gibt (pdfa, hinweis) zurück."""
@@ -119,7 +203,10 @@ def finalize_pdfa(pdf: Path):
 
 
 # ----------------------------------------------------------------- Planung
-def plan(root: Path, images: set, done: set, generated: set):
+def plan(root: Path, images: set, done: set, generated: set, info=None):
+    """info (dict, optional) sammelt: already_pdfa (Liste), scan_pdfs (Anzahl)."""
+    info = info if info is not None else {}
+    info.setdefault("already_pdfa", []); info.setdefault("scan_pdfs", 0)
     jobs = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
@@ -133,6 +220,15 @@ def plan(root: Path, images: set, done: set, generated: set):
             elif ext in ODF:
                 jobs.append(("odf", p, ext))
             elif ext == "pdf" and not n.lower().endswith("_pdfa.pdf"):
+                if str(p) not in done:
+                    try:
+                        pages, no_text, pdfa = inspect_pdf(p)
+                    except Exception:
+                        pages, no_text, pdfa = 0, 0, ""      # verschlüsselt/defekt: Job meldet den Fehler
+                    if pdfa and pages and not no_text:
+                        info["already_pdfa"].append(p); continue
+                    if no_text:
+                        info["scan_pdfs"] += 1
                 jobs.append(("pdf", p, ext))
             elif ext in images:
                 jobs.append(("image", p, ext))
@@ -156,12 +252,14 @@ def describe(kind, p, ext, odf_t, pdf_t):
 
 
 # ----------------------------------------------------------------- Ausführung (Worker)
-def process(job, lang):
+def process(job, lang, fix_scans=False, ocr_jobs=1, defer_validation=False):
     kind, src, ext, odf_t, pdf_t = job
     rows = []
+    t0 = time.monotonic()
     def log(action, target, status, pdfa="", hint=""):
         rows.append(dict(quelle=str(src), aktion=action, ziel=str(target or ""), status=status,
-                         pdfa=pdfa, hinweis=hint, zeit=time.strftime("%Y-%m-%d %H:%M:%S")))
+                         pdfa=pdfa, hinweis=hint, zeit=time.strftime("%Y-%m-%d %H:%M:%S"),
+                         sekunden=f"{time.monotonic() - t0:.1f}"))
     with tempfile.TemporaryDirectory(prefix="mig_") as td:
         work = Path(td); profile = work / "profile"
         mtime = src.stat().st_mtime
@@ -190,13 +288,18 @@ def process(job, lang):
                     log("pdfa", None, "übersprungen", hint="Ziel belegt"); return rows
                 pdf_source = soffice(src, lo_pdfa_filter(kind_odf), work, profile)
                 tmp_out = work / "out.pdf"
-                hint = ocr_pdfa(pdf_source, tmp_out, lang)
+                _, no_text, _ = inspect_pdf(pdf_source)
+                if no_text:      # z. B. eingefügter Scan: OCR nötig (Tagging geht dabei verloren)
+                    hint = ocr_pdfa(pdf_source, tmp_out, lang, fix_scans=fix_scans, ocr_jobs=ocr_jobs)
+                    hint = "; ".join(filter(None, [hint, f"OCR für {no_text} Seite(n) ohne Text"]))
+                else:            # LibreOffice-PDF/A direkt: schneller, behält Tagging
+                    shutil.move(str(pdf_source), tmp_out); hint = ""
             elif kind == "pdf":
                 t = pdf_t
                 if not t:
                     log("pdfa", None, "übersprungen", hint="Ziel belegt"); return rows
                 tmp_out = work / "out.pdf"
-                hint = ocr_pdfa(src, tmp_out, lang)
+                hint = ocr_pdfa(src, tmp_out, lang, fix_scans=fix_scans, ocr_jobs=ocr_jobs)
             else:  # image
                 t = pdf_t
                 if not t:
@@ -206,8 +309,12 @@ def process(job, lang):
                 if code != 0:
                     raise RuntimeError(f"img2pdf: {out[-300:]}")
                 tmp_out = work / "out.pdf"
-                hint = ocr_pdfa(tmp_in, tmp_out, lang, image_input=True)
-            pdfa, vhint = finalize_pdfa(tmp_out)
+                hint = ocr_pdfa(tmp_in, tmp_out, lang, image_input=True, fix_scans=fix_scans, ocr_jobs=ocr_jobs)
+            if defer_validation:     # veraPDF später im Stapel; bis dahin ehrlich 2b
+                set_conformance(tmp_out, "B")
+                pdfa, vhint = "2b", "veraPDF-Prüfung ausstehend"
+            else:
+                pdfa, vhint = finalize_pdfa(tmp_out)
             place(tmp_out, t)
             log("pdfa", t, "ok" if pdfa != "ungültig" else "warnung", pdfa, "; ".join(filter(None, [hint, vhint])))
         except Exception as e:
@@ -264,14 +371,14 @@ def render_tree(root_name, notes):
     walk(tree, "")
     return out
 
-def write_report(path, title, root, tree_lines, table, notes):
+def write_report(path, title, root, tree_lines, table, notes, sections=()):
     if not path:
         return
     L = [f"# {title}: `{root}`", "", f"Stand {time.strftime('%Y-%m-%d %H:%M')}", "",
          "Legende: → wird/wurde angelegt · ✓ erledigt · ✗ Fehler · ⊘ übersprungen. Zusammenfassung am Ende.", "",
          "## Baum", "", "```text"] + tree_lines + ["```", "", "## Zusammenfassung", "", "| | Anzahl |", "|---|---:|"]
     L += [f"| {r[0].strip()} | {r[1]} |" for r in table if r is not None]
-    L += [""] + [f"- {n}" for n in notes if n]
+    L += [""] + [f"- {n}" for n in notes if n] + list(sections)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(L) + "\n", encoding="utf-8", errors="replace")
 
@@ -292,7 +399,7 @@ def count_images(root: Path, images: set, done: set, generated: set):
                 c[ext] += 1
     return c
 
-def suggest(images: set, lang: str, jobs, found: Counter, planned: int):
+def suggest(images: set, lang: str, jobs, found: Counter, planned: int, scan_pdfs=0, fix_scans=False):
     """Vorschlag für den run-Aufruf + Hinweise. jobs=None: Standard."""
     want = set(images) | {e for e in IMAGE_SCAN if found[e]}
     if not planned and not want - set(images):
@@ -301,6 +408,7 @@ def suggest(images: set, lang: str, jobs, found: Counter, planned: int):
     if want: cmd.append("--images " + ",".join(sorted(want)))
     if lang != DEFAULT_LANG: cmd.append(f"--lang {lang}")
     if jobs: cmd.append(f"-j {jobs}")
+    if fix_scans: cmd.append("--fix-scans")
     hints = []
     scans = sum(found[e] for e in IMAGE_SCAN)
     if scans: hints.append(f"{scans} TIFF-Dateien gefunden → als Scans eingeplant (OCR → PDF/A).")
@@ -309,9 +417,28 @@ def suggest(images: set, lang: str, jobs, found: Counter, planned: int):
         lst = ", ".join(f"{n} .{e}" for e, n in maybe)
         hints.append(f"Nicht eingeplant: {lst} – meist Fotos. Falls Scans: --images "
                      + ",".join(sorted(want | {e for e, _ in maybe})))
+    if (scans or scan_pdfs) and not fix_scans:
+        what = " und ".join(filter(None, [f"{scans} TIFF" if scans else "", f"{scan_pdfs} PDF mit Scan-Seiten" if scan_pdfs else ""]))
+        hints.append(f"Scans ({what}): gedreht oder schief? Dann zusätzlich --fix-scans (≈ 40 % mehr Zeit).")
     return " ".join(cmd), hints
 
 KIND_LABEL = {"office": "Office → ODF + PDF/A", "odf": "ODF → PDF/A", "pdf": "PDF → PDF/A + OCR", "image": "Bild → PDF/A + OCR"}
+
+
+def fmt_dur(sec):
+    sec = int(round(sec))
+    return f"{sec // 3600}:{sec // 60 % 60:02d}:{sec % 60:02d}" if sec >= 3600 else f"{sec // 60}:{sec % 60:02d} min"
+
+def upgrade_log(log: Path):
+    """Ältere Protokolle ohne neue Spalten auf LOG_FIELDS heben (Inhalt bleibt)."""
+    with open(log, encoding="utf-8", newline="") as f:
+        r = csv.DictReader(f); fields, rows = r.fieldnames or [], list(r)
+    if fields == LOG_FIELDS:
+        return
+    tmp = log.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=LOG_FIELDS, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
+    tmp.replace(log)
 
 
 def main():
@@ -320,13 +447,17 @@ def main():
     ap.add_argument("--apply", action="store_true", help="wirklich ausführen (sonst Vorschau)")
     ap.add_argument("--images", default="", help="Bildendungen für OCR-PDF, z. B. tif,tiff,png")
     ap.add_argument("--lang", default=DEFAULT_LANG, help="Tesseract-Sprachen (Standard deu+eng)")
-    ap.add_argument("-j", "--jobs", type=int, default=None, help="parallele Jobs (Standard: halbe CPU-Anzahl)")
+    ap.add_argument("--fix-scans", action="store_true",
+                    help="Scans automatisch drehen und gerade richten (≈ 40 %% mehr OCR-Zeit)")
+    ap.add_argument("-j", "--jobs", type=int, default=None, help="parallele Dateien (Standard: CPU-Anzahl)")
     ap.add_argument("--log", type=Path, default=None,
                     help="Protokoll (Standard: <root>/.ordnig/migration_log.csv, reist mit der Ablage)")
     ap.add_argument("--report", type=Path, default=None, help="Bericht als Markdown-Baum schreiben")
     args = ap.parse_args()
     jobs_given = args.jobs
-    args.jobs = args.jobs or max(1, (os.cpu_count() or 2) // 2)
+    cpus = os.cpu_count() or 1
+    args.jobs = args.jobs or cpus
+    ocr_jobs = max(1, cpus // args.jobs)          # keine Überbelegung: Dateien × OCR-Threads ≈ CPUs
     root = args.root.resolve()
     if args.log is None:
         args.log = root / ".ordnig" / "migration_log.csv"
@@ -339,12 +470,15 @@ def main():
                 done.add(r["quelle"])
     images = {e.strip().lower().lstrip(".") for e in args.images.split(",") if e.strip()}
     progress("Plane …")
-    jobs = plan(root, images, done, generated)
+    info = {}
+    jobs = plan(root, images, done, generated, info)
     progress_done()
 
     missing = [t for t in ("soffice", "ocrmypdf", "img2pdf") if not shutil.which(t)]
-    vera_note = "" if shutil.which("verapdf") else "veraPDF fehlt: PDFs werden als 2b deklariert, nicht 2u."
+    has_vera = bool(shutil.which("verapdf"))
+    vera_note = "" if has_vera else "veraPDF fehlt: PDFs werden als 2b deklariert, nicht 2u."
     rel = lambda p: str(Path(p).relative_to(root))
+    already = [("Bereits PDF/A mit Text (bleibt)", len(info["already_pdfa"]))] if info["already_pdfa"] else []
 
     if not args.apply:
         notes, kinds, blocked = {}, Counter(), 0
@@ -355,13 +489,15 @@ def main():
                       [pdf_t.name if pdf_t else "⊘ PDF (Ziel belegt)"]
             blocked += (kind == "office" and odf_t is None) + (pdf_t is None)
             notes[rel(src)] = "→ " + " · ".join(targets)
+        for p in info["already_pdfa"]:
+            notes[rel(p)] = "⊘ bereits PDF/A mit Text"
         table = [(f"  {KIND_LABEL[k]}", kinds[k]) for k in KIND_LABEL if kinds[k]]
-        table = [("Geplant", len(jobs))] + table + [None, ("Ziel belegt (übersprungen)", blocked),
-                                                    ("Bereits erledigt", len(done))]
+        table = [("Geplant", len(jobs))] + table + [None, ("Ziel belegt (übersprungen)", blocked)] + already + \
+                [("Bereits erledigt", len(done))]
         found = count_images(root, images, done, generated)
         if found:
             table.append(("Bilder nicht eingeplant", sum(found.values())))
-        cmd, hints = suggest(images, args.lang, jobs_given, found, len(jobs))
+        cmd, hints = suggest(images, args.lang, jobs_given, found, len(jobs), info["scan_pdfs"], args.fix_scans)
         foot = [vera_note, f"Fehlende Programme: {', '.join(missing)}" if missing else ""]
         advice = ([f"Vorschlag: {cmd}", "           (gleicher docker-Aufruf, Ablage ohne :ro – vorher Snapshot)"]
                   if cmd else []) + hints
@@ -373,31 +509,55 @@ def main():
     if missing:
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
 
+    t_start = time.monotonic()
     args.log.parent.mkdir(parents=True, exist_ok=True)
+    if args.log.exists():
+        upgrade_log(args.log)
     new_log = not args.log.exists()
     results = defaultdict(list)
     with open(args.log, "a", newline="", encoding="utf-8") as lf:
         w = csv.DictWriter(lf, fieldnames=LOG_FIELDS)
         if new_log: w.writeheader()
         with ProcessPoolExecutor(max_workers=args.jobs) as ex:
-            futs = {ex.submit(process, j, args.lang): j for j in jobs}
+            futs = {ex.submit(process, j, args.lang, args.fix_scans, ocr_jobs, has_vera): j for j in jobs}
             for i, f in enumerate(as_completed(futs), 1):
                 j = futs[f]
                 try:
                     rows = f.result()
                 except Exception as e:
                     rows = [dict(quelle=str(j[1]), aktion="pdfa", ziel="", status="fehler", pdfa="", hinweis=str(e),
-                                 zeit=time.strftime("%Y-%m-%d %H:%M:%S"))]
+                                 zeit=time.strftime("%Y-%m-%d %H:%M:%S"), sekunden="")]
                 for r in rows:
                     w.writerow(r); results[r["quelle"]].append(r)
                 lf.flush()
                 progress(f"Migriere {i}/{len(jobs)}: {j[1].name}")
+
+        # veraPDF im Stapel: ein JVM-Start je 50 Dateien statt ein bis zwei je Datei
+        pending = [r for rows in results.values() for r in rows
+                   if r["aktion"] == "pdfa" and r["hinweis"].endswith("veraPDF-Prüfung ausstehend")]
+        if pending:
+            t_v = time.monotonic()
+            verdict = validate_all([Path(r["ziel"]) for r in pending],
+                                   lambda i, n: progress(f"veraPDF {i}/{n}"))
+            per_file = (time.monotonic() - t_v) / len(pending)
+            for r in pending:
+                pdfa, vhint = verdict[Path(r["ziel"])]
+                r["pdfa"] = pdfa
+                r["status"] = "ok" if pdfa != "ungültig" else "warnung"
+                r["hinweis"] = "; ".join(filter(None, [r["hinweis"].replace("veraPDF-Prüfung ausstehend", "").strip("; "), vhint]))
+                r["sekunden"] = f"{float(r['sekunden'] or 0) + per_file:.1f}"
+                r["zeit"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                w.writerow(r)      # neuere Zeile gilt
+            lf.flush()
     progress_done()
+    wall = time.monotonic() - t_start
 
     c = Counter()
-    notes = {}
+    notes, durations = {}, []
     for src, rows in results.items():
         bits = []
+        secs = max((float(r["sekunden"]) for r in rows if r.get("sekunden")), default=0)
+        durations.append((secs, rel(src)))
         for r in rows:
             name = Path(r["ziel"]).name if r["ziel"] else r["aktion"].upper()
             if r["status"] == "ok":
@@ -410,13 +570,21 @@ def main():
                 c["fail"] += 1
             if r["status"] == "ok" and r["pdfa"] and r["hinweis"] and "bestanden" not in r["hinweis"]:
                 bits[-1] += f" – {r['hinweis']}"
-        notes[rel(src)] = " · ".join(bits)
+        notes[rel(src)] = " · ".join(bits) + f" · {secs:.1f} s"
+    for p in info["already_pdfa"]:
+        notes[rel(p)] = "⊘ bereits PDF/A mit Text"
+    durations.sort(reverse=True)
     table = [("Dateien bearbeitet", len(results)), ("  ODF angelegt", c["odf_ok"]), ("  PDF/A-2u", c["pdf_2u"]),
-             ("  PDF/A-2b", c["pdf_2b"]), None, ("Fehler / ungültig", c["fail"]), ("Übersprungen", c["skip"]),
-             ("Bereits erledigt (früher)", len(done))]
-    foot = [vera_note, f"Protokoll: {args.log}"]
-    write_report(args.report, "Migration", root, render_tree(root.name, notes), table, foot)
-    console_table("Migration", table, foot[:1] + [f"Details: {args.report}" if args.report else foot[1]])
+             ("  PDF/A-2b", c["pdf_2b"]), None, ("Fehler / ungültig", c["fail"]), ("Übersprungen", c["skip"])] + \
+            already + [("Bereits erledigt (früher)", len(done)), None, ("Laufzeit", fmt_dur(wall))]
+    if results:
+        table.append(("  Ø pro Datei (Rechenzeit)", f"{sum(d for d, _ in durations) / len(durations):.1f} s"))
+    foot = [vera_note, f"Protokoll: {args.log}",
+            f"{args.jobs} Dateien parallel × {ocr_jobs} OCR-Thread(s)" + (" · --fix-scans" if args.fix_scans else "")]
+    slow = ["", "### Langsamste Dateien", "", "| Sekunden | Datei |", "|---:|---|"] + \
+           [f"| {d:.1f} | `{p}` |" for d, p in durations[:15]] if durations else []
+    write_report(args.report, "Migration", root, render_tree(root.name, notes), table, foot, slow)
+    console_table("Migration", table, [foot[0], f"Details: {args.report}" if args.report else foot[1]])
 
 if __name__ == "__main__":
     main()
