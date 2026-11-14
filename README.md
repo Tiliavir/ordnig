@@ -42,8 +42,19 @@ docker run --rm -v /volume1/ablage:/ablage:ro -v "$PWD/report:/report" \
   ghcr.io/tiliavir/ordnig verify
 ```
 
+### Check for bit rot regularly
+
+Run `verify` monthly, e.g. as a Synology *Task Scheduler* task (user-defined
+script) or a cron job, and read the table it prints (the task can mail it):
+
+```sh
+# crontab: 03:00 on the 1st of every month
+0 3 1 * * docker run --rm -v /volume1/ablage:/ablage:ro -v /volume1/ordnig-report:/report ghcr.io/tiliavir/ordnig verify
+```
+
 `run` can be interrupted and restarted; it continues where it stopped
-(state in `<archive>/.ordnig/`). More options: `… ordnig help`.
+(state in `<archive>/.ordnig/`). More options: `… ordnig help`; tool versions: `… ordnig version`.
 Keep `report/manifest.sha256` somewhere other than the archive.
 
-Details: [docs/architecture.md](docs/architecture.md).
+Details: [docs/architecture.md](docs/architecture.md) · [changelog](CHANGELOG.md) ·
+[contributing and releasing](CONTRIBUTING.md) · License: [MIT](LICENSE).

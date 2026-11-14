@@ -16,6 +16,7 @@ ordnig – checks an old file archive and adds archival copies next to the origi
   run [opts]         report, convert, report again, store fresh checksums.
   check              report only.
   verify             compare against the last checksums ($OUT/manifest.sha256).
+  version            versions of ordnig and the bundled tools.
 
 Options for run (passed to the converter):
   --images tif,tiff  also OCR scanned images into PDF/A
@@ -69,6 +70,8 @@ case $cmd in
     [[ -f $OUT/manifest.sha256 ]] || { echo "No $OUT/manifest.sha256 yet – run 'check' or 'run' first" >&2; exit 2; }
     check verify "Bitrot-Prüfung" --verify "$OUT/manifest.sha256"
     ;;
+  version|--version)
+    if [[ -f $LIB/versions.txt ]]; then cat "$LIB/versions.txt"; else echo "versions.txt missing (not running in the image)"; fi ;;
   help|-h|--help) usage ;;
   *) usage >&2; exit 2 ;;
 esac

@@ -1,10 +1,12 @@
-FROM ubuntu:24.04
+# Pinned by digest; Dependabot proposes updates.
+FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG ORDNIG_VERSION=dev
 # veraPDF publishes only a "latest" installer; CI smoke-tests every build.
 ARG VERAPDF_URL=https://software.verapdf.org/releases/verapdf-installer.zip
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get -y upgrade && apt-get install -y --no-install-recommends \
       python3 file tini ca-certificates curl unzip \
       ocrmypdf ghostscript img2pdf pngquant unpaper \
       tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng tesseract-ocr-frk \
@@ -24,9 +26,17 @@ RUN curl -fsSL -o /tmp/vera.zip "$VERAPDF_URL" \
  && verapdf --version \
  && rm -rf /tmp/vera /tmp/vera.zip /tmp/auto-install.xml
 
-COPY src/check.py src/migrate.py /opt/ordnig/
+COPY src/check.py src/migrate.py LICENSE /opt/ordnig/
 COPY src/ordnig /usr/local/bin/ordnig
-RUN chmod +x /usr/local/bin/ordnig
+RUN chmod +x /usr/local/bin/ordnig \
+ && { echo "ordnig:      $ORDNIG_VERSION"; \
+      echo "veraPDF:     $(verapdf --version | head -1)"; \
+      echo "OCRmyPDF:    $(ocrmypdf --version)"; \
+      echo "Tesseract:   $(tesseract --version 2>&1 | head -1)"; \
+      echo "LibreOffice: $(soffice --version | head -1)"; \
+      echo "Ghostscript: $(gs --version)"; \
+      echo "Python:      $(python3 --version)"; \
+      echo "Base:        $(. /etc/os-release && echo "$PRETTY_NAME")"; } > /opt/ordnig/versions.txt
 
 # Runs fine as any UID (docker run --user); LibreOffice gets a temp profile per job.
 ENV HOME=/tmp OMP_THREAD_LIMIT=1 PYTHONDONTWRITEBYTECODE=1
