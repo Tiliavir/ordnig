@@ -24,12 +24,12 @@ RUN curl -fsSL -o /tmp/vera.zip "$VERAPDF_URL" \
  && verapdf --version \
  && rm -rf /tmp/vera /tmp/vera.zip /tmp/auto-install.xml
 
-COPY src/check.py src/migrate.py /opt/archive-validator/
-COPY src/archive-validator /usr/local/bin/archive-validator
-RUN chmod +x /usr/local/bin/archive-validator
+COPY src/check.py src/migrate.py /opt/ordnig/
+COPY src/ordnig /usr/local/bin/ordnig
+RUN chmod +x /usr/local/bin/ordnig
 
 # Runs fine as any UID (docker run --user); LibreOffice gets a temp profile per job.
 ENV HOME=/tmp OMP_THREAD_LIMIT=1 PYTHONDONTWRITEBYTECODE=1
 VOLUME ["/ablage", "/report"]
-ENTRYPOINT ["tini", "--", "archive-validator"]
+ENTRYPOINT ["tini", "--", "ordnig"]
 CMD ["preview"]

@@ -1,4 +1,6 @@
-# archive-validator
+# ordnig
+
+*Ordnig* (Alemannic): order, tidiness.
 
 Checks an old file archive for formats that won't last and for inconsistencies,
 then puts archival copies **next to** the originals:
@@ -26,20 +28,20 @@ writes SHA-256 checksums to detect bit rot later.
 # 1. Look first (archive mounted read-only)
 docker run --rm --user "$(id -u):$(id -g)" \
   -v /volume1/ablage:/ablage:ro -v "$PWD/report:/report" \
-  ghcr.io/tiliavir/archive-validator
+  ghcr.io/tiliavir/ordnig
 
 # 2. Convert (work on a snapshot or copy first)
 docker run --rm --user "$(id -u):$(id -g)" \
   -v /volume1/ablage:/ablage -v "$PWD/report:/report" \
-  ghcr.io/tiliavir/archive-validator run --images tif,tiff
+  ghcr.io/tiliavir/ordnig run --images tif,tiff
 
 # 3. Later: check for bit rot
 docker run --rm -v /volume1/ablage:/ablage:ro -v "$PWD/report:/report" \
-  ghcr.io/tiliavir/archive-validator verify
+  ghcr.io/tiliavir/ordnig verify
 ```
 
 `run` can be interrupted and restarted; it continues where it stopped
-(state in `<archive>/.archive-validator/`). More options: `… archive-validator help`.
+(state in `<archive>/.ordnig/`). More options: `… ordnig help`.
 Keep `report/manifest.sha256` somewhere other than the archive.
 
 Details: [docs/architecture.md](docs/architecture.md).

@@ -26,7 +26,7 @@ Aufruf:
   python3 ablage_migrate.py /ablage                    # Vorschau
   python3 ablage_migrate.py /ablage --apply            # ausführen
   python3 ablage_migrate.py /ablage --apply --images tif,tiff --lang deu+eng -j 4
-Das Protokoll liegt in <ablage>/.archive-validator/migration_log.csv; Wiederholungs-
+Das Protokoll liegt in <ablage>/.ordnig/migration_log.csv; Wiederholungs-
 läufe überspringen Erledigtes und machen bei Fehlern weiter.
 """
 import argparse, csv, os, re, shutil, subprocess, sys, tempfile, time
@@ -41,7 +41,7 @@ ODF = {"odt": "odt", "ods": "ods", "odp": "odp", "fodt": "odt", "fods": "ods", "
 ODF_FOR = {**{e: "odt" for e in TEXT - {"txt"}}, **{e: "ods" for e in CALC - {"dbf"}},
            **{e: "odp" for e in IMPRESS}}
 PDF_FILTER = {"odt": "writer_pdf_Export", "ods": "calc_pdf_Export", "odp": "impress_pdf_Export"}
-SKIP_DIRS = {"@eaDir", "#recycle", ".git", ".archive-validator"}
+SKIP_DIRS = {"@eaDir", "#recycle", ".git", ".ordnig"}
 LOG_FIELDS = ["quelle", "aktion", "ziel", "status", "pdfa", "hinweis", "zeit"]
 
 
@@ -225,11 +225,11 @@ def main():
     ap.add_argument("--lang", default="deu+eng", help="Tesseract-Sprachen (Standard deu+eng)")
     ap.add_argument("-j", "--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--log", type=Path, default=None,
-                    help="Protokoll (Standard: <root>/.archive-validator/migration_log.csv, reist mit der Ablage)")
+                    help="Protokoll (Standard: <root>/.ordnig/migration_log.csv, reist mit der Ablage)")
     args = ap.parse_args()
     root = args.root.resolve()
     if args.log is None:
-        args.log = root / ".archive-validator" / "migration_log.csv"
+        args.log = root / ".ordnig" / "migration_log.csv"
 
     done, generated = set(), set()
     if args.log.exists():

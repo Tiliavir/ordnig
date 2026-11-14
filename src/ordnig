@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# archive-validator – entry point. Archive mounted at $AV_SRC, reports go to $AV_OUT.
+# ordnig – entry point. Archive mounted at $ORDNIG_SRC, reports go to $ORDNIG_OUT.
 set -euo pipefail
 
-SRC=${AV_SRC:-/ablage}
-OUT=${AV_OUT:-/report}
-LIB=${AV_LIB:-/opt/archive-validator}
+SRC=${ORDNIG_SRC:-/ablage}
+OUT=${ORDNIG_OUT:-/report}
+LIB=${ORDNIG_LIB:-/opt/ordnig}
 STAMP=$(date +%Y-%m-%d_%H%M%S)
 PY=(python3 -I)
 
 usage() {
   cat <<EOF
-archive-validator – checks an old file archive and adds archival copies next to the originals.
+ordnig – checks an old file archive and adds archival copies next to the originals.
 
   preview            (default) report + list of planned conversions. Changes nothing.
   run [opts]         report, convert, report again, store fresh checksums.
@@ -58,7 +58,7 @@ case $cmd in
     [[ -w $SRC ]] || { echo "Archive is read-only – remove :ro for run" >&2; exit 2; }
     check before
     "${PY[@]}" "$LIB/migrate.py" "$SRC" --apply "$@"
-    cp "$SRC/.archive-validator/migration_log.csv" "$OUT/$STAMP-migration_log.csv" 2>/dev/null || true
+    cp "$SRC/.ordnig/migration_log.csv" "$OUT/$STAMP-migration_log.csv" 2>/dev/null || true
     check after
     store_manifest
     ;;

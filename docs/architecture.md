@@ -10,7 +10,7 @@ an additional file. One container, no setup on the host.
 
 | Part | Job |
 | --- | --- |
-| `src/archive-validator` | entry point: `preview`, `run`, `check`, `verify` |
+| `src/ordnig` | entry point: `preview`, `run`, `check`, `verify` |
 | `src/check.py` | read-only scan → `report.md`, `files.csv`, `duplicates.csv`, `manifest.sha256`; stdlib only |
 | `src/migrate.py` | plans and runs conversions; preview unless `--apply` |
 | LibreOffice (headless) | legacy office → ODF; ODF/office → tagged PDF/A-2 |
@@ -32,7 +32,7 @@ Targets are reserved during planning so parallel jobs never collide
 
 ## State
 
-`<archive>/.archive-validator/migration_log.csv` travels with the archive: generated
+`<archive>/.ordnig/migration_log.csv` travels with the archive: generated
 files are not converted again, finished sources are skipped, failed ones are
 retried. Reports and the checksum baseline live in `/report`, outside the archive.
 

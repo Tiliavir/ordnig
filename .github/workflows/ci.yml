@@ -10,7 +10,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/tiliavir/archive-validator
+  IMAGE: ghcr.io/tiliavir/ordnig
 
 jobs:
   test:
@@ -20,20 +20,20 @@ jobs:
       - name: Lint
         run: |
           python3 -m py_compile src/check.py src/migrate.py
-          shellcheck src/archive-validator tests/smoke.sh
+          shellcheck src/ordnig tests/smoke.sh
       - uses: docker/setup-buildx-action@v3
       - name: Build image (amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
           load: true
-          tags: archive-validator:test
+          tags: ordnig:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test (as non-root)
         run: |
           docker run --rm --user 1000:1000 -v "$PWD/tests:/tests:ro" \
-            --entrypoint bash archive-validator:test /tests/smoke.sh | tee smoke.log
+            --entrypoint bash ordnig:test /tests/smoke.sh | tee smoke.log
           { echo '```'; tail -20 smoke.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   release:
