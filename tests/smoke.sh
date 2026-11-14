@@ -55,7 +55,8 @@ log=$ORDNIG_SRC/.ordnig/migration_log.csv
 grep -q ',fehler,' "$log" && { cat "$log"; fail "conversion errors"; }
 grep -q 'Einzelprüfung' "$log" && { cat "$log"; fail "veraPDF batch output not parsed"; }
 if command -v verapdf >/dev/null; then
-  bad=$(awk -F, '$2=="pdfa" && $5!="2u"' "$log")
+  # newest row per target wins (pending row first, verdict appended after the veraPDF batch)
+  bad=$(awk -F, '$2=="pdfa" {last[$3]=$0; v[$3]=$5} END {for (k in v) if (v[k] != "2u") print last[k]}' "$log")
   [[ -z $bad ]] || { echo "$bad"; fail "not all PDFs are PDF/A-2u"; }
 fi
 
@@ -69,5 +70,6 @@ grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify r
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 
-echo "--- migration log"; cut -d, -f2,4-6 "$log"
+echo "--- migration log (newest row per target)"
+awk -F, 'NR>1 {k=$2 FS $3; row[k]=$2 FS $4 FS $5 FS $6 FS $8} END {for (k in row) print row[k]}' "$log" | sort
 echo "SMOKE TEST OK"
