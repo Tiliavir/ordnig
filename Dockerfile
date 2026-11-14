@@ -1,5 +1,5 @@
 # Pinned by digest; Dependabot proposes updates.
-FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5
+FROM ubuntu:25.10@sha256:7cc5e35f6567ee8c66d2abb4aab0fd866669e6207c237c3a8f0947a5c7f17092
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ORDNIG_VERSION=dev
