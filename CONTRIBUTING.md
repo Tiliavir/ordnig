@@ -9,7 +9,9 @@ docker run --rm -v "$PWD/tests:/tests:ro" --entrypoint bash ordnig:test /tests/s
 ```
 
 CI runs both, the smoke test on amd64 and arm64, plus shellcheck and a Trivy
-scan. `main` accepts changes only through pull requests with green checks.
+scan. `main` accepts changes only through pull requests with green checks: ruleset
+[`.github/rulesets/main.json`](.github/rulesets/main.json), imported under
+Settings → Rules → Rulesets → New ruleset → Import a ruleset.
 
 ## Releasing
 
