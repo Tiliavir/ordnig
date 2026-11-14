@@ -17,7 +17,9 @@ then puts archival copies **next to** the originals:
 Originals are never changed, nothing is overwritten. PDF/A-2u is declared only
 when veraPDF confirms it; otherwise 2b, with the reason in the log.
 
-The report (German) lists format risks, broken files (truncated PDF/JPEG,
+The console shows one summary table per step. The reports in `/report`
+(German, Markdown) show the whole archive as a tree with every finding per
+file and folder totals, followed by a summary. They list format risks, broken files (truncated PDF/JPEG,
 corrupt ZIP/Office), wrong extensions, duplicates, encoding problems in file
 names, names that collide on Windows/macOS, empty files and folders. It also
 writes SHA-256 checksums to detect bit rot later.
