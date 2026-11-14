@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# archive-validator – entry point. Archive mounted at $AV_SRC, reports go to $AV_OUT.
+set -euo pipefail
+
+SRC=${AV_SRC:-/ablage}
+OUT=${AV_OUT:-/report}
+LIB=${AV_LIB:-/opt/archive-validator}
+STAMP=$(date +%Y-%m-%d_%H%M%S)
+PY=(python3 -I)
+
+usage() {
+  cat <<EOF
+archive-validator – checks an old file archive and adds archival copies next to the originals.
+
+  preview            (default) report + list of planned conversions. Changes nothing.
+  run [opts]         report, convert, report again, store fresh checksums.
+  check              report only.
+  verify             compare against the last checksums ($OUT/manifest.sha256).
+
+Options for run (passed to the converter):
+  --images tif,tiff  also OCR scanned images into PDF/A
+  --lang deu+eng     Tesseract languages (default deu+eng; also: frk, fra, ita)
+  -j N               parallel jobs
+
+Mounts: archive -> $SRC, reports -> $OUT
+EOF
+}
+
+need_dirs() {
+  [[ -d $SRC ]] || { echo "Archive not mounted at $SRC (-v /path:$SRC)" >&2; exit 2; }
+  mkdir -p "$OUT" || { echo "Report dir $OUT not writable" >&2; exit 2; }
+}
+
+check() {   # $1 = label, rest = extra args
+  local label=$1; shift
+  local dir="$OUT/$STAMP-$label"
+  "${PY[@]}" "$LIB/check.py" "$SRC" --out "$dir" "$@"
+  echo "Report: $dir/report.md"
+  LAST_CHECK=$dir
+}
+
+store_manifest() {
+  if [[ -f $LAST_CHECK/manifest.sha256 ]]; then
+    cp "$LAST_CHECK/manifest.sha256" "$OUT/manifest.sha256"
+    echo "Checksums stored: $OUT/manifest.sha256 (keep a copy elsewhere)"
+  fi
+}
+
+cmd=${1:-preview}; [[ $# -gt 0 ]] && shift
+case $cmd in
+  preview)
+    need_dirs
+    check check
+    "${PY[@]}" "$LIB/migrate.py" "$SRC" "$@" | tee "$OUT/$STAMP-plan.txt"
+    ;;
+  run)
+    need_dirs
+    [[ -w $SRC ]] || { echo "Archive is read-only – remove :ro for run" >&2; exit 2; }
+    check before
+    "${PY[@]}" "$LIB/migrate.py" "$SRC" --apply "$@"
+    cp "$SRC/.archive-validator/migration_log.csv" "$OUT/$STAMP-migration_log.csv" 2>/dev/null || true
+    check after
+    store_manifest
+    ;;
+  check)
+    need_dirs; check check "$@"; [[ -f $OUT/manifest.sha256 ]] || store_manifest ;;
+  verify)
+    need_dirs
+    [[ -f $OUT/manifest.sha256 ]] || { echo "No $OUT/manifest.sha256 yet – run 'check' or 'run' first" >&2; exit 2; }
+    check verify --verify "$OUT/manifest.sha256"
+    ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac
