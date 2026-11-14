@@ -275,6 +275,42 @@ def write_report(path, title, root, tree_lines, table, notes):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(L) + "\n", encoding="utf-8", errors="replace")
 
+# Bildformate: TIFF ist fast immer ein Scan -> wird vorgeschlagen; der Rest sind meist Fotos -> nur Hinweis.
+IMAGE_SCAN = ("tif", "tiff")
+IMAGE_MAYBE = ("jpg", "jpeg", "png", "bmp", "gif", "jp2", "webp")
+DEFAULT_LANG = "deu+eng"
+
+def count_images(root: Path, images: set, done: set, generated: set):
+    """Bilder, die noch nicht eingeplant sind (nicht in --images, nicht erledigt)."""
+    c = Counter()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for n in filenames:
+            ext = n.rsplit(".", 1)[-1].lower() if "." in n else ""
+            p = str(Path(dirpath) / n)
+            if ext in IMAGE_SCAN + IMAGE_MAYBE and ext not in images and p not in done and p not in generated:
+                c[ext] += 1
+    return c
+
+def suggest(images: set, lang: str, jobs, found: Counter, planned: int):
+    """Vorschlag für den run-Aufruf + Hinweise. jobs=None: Standard."""
+    want = set(images) | {e for e in IMAGE_SCAN if found[e]}
+    if not planned and not want - set(images):
+        return None, ["Nichts zu tun – alles erledigt."]
+    cmd = ["ordnig run"]
+    if want: cmd.append("--images " + ",".join(sorted(want)))
+    if lang != DEFAULT_LANG: cmd.append(f"--lang {lang}")
+    if jobs: cmd.append(f"-j {jobs}")
+    hints = []
+    scans = sum(found[e] for e in IMAGE_SCAN)
+    if scans: hints.append(f"{scans} TIFF-Dateien gefunden → als Scans eingeplant (OCR → PDF/A).")
+    maybe = [(e, found[e]) for e in IMAGE_MAYBE if found[e]]
+    if maybe:
+        lst = ", ".join(f"{n} .{e}" for e, n in maybe)
+        hints.append(f"Nicht eingeplant: {lst} – meist Fotos. Falls Scans: --images "
+                     + ",".join(sorted(want | {e for e, _ in maybe})))
+    return " ".join(cmd), hints
+
 KIND_LABEL = {"office": "Office → ODF + PDF/A", "odf": "ODF → PDF/A", "pdf": "PDF → PDF/A + OCR", "image": "Bild → PDF/A + OCR"}
 
 
@@ -283,12 +319,14 @@ def main():
     ap.add_argument("root", type=Path)
     ap.add_argument("--apply", action="store_true", help="wirklich ausführen (sonst Vorschau)")
     ap.add_argument("--images", default="", help="Bildendungen für OCR-PDF, z. B. tif,tiff,png")
-    ap.add_argument("--lang", default="deu+eng", help="Tesseract-Sprachen (Standard deu+eng)")
-    ap.add_argument("-j", "--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
+    ap.add_argument("--lang", default=DEFAULT_LANG, help="Tesseract-Sprachen (Standard deu+eng)")
+    ap.add_argument("-j", "--jobs", type=int, default=None, help="parallele Jobs (Standard: halbe CPU-Anzahl)")
     ap.add_argument("--log", type=Path, default=None,
                     help="Protokoll (Standard: <root>/.ordnig/migration_log.csv, reist mit der Ablage)")
     ap.add_argument("--report", type=Path, default=None, help="Bericht als Markdown-Baum schreiben")
     args = ap.parse_args()
+    jobs_given = args.jobs
+    args.jobs = args.jobs or max(1, (os.cpu_count() or 2) // 2)
     root = args.root.resolve()
     if args.log is None:
         args.log = root / ".ordnig" / "migration_log.csv"
@@ -320,10 +358,17 @@ def main():
         table = [(f"  {KIND_LABEL[k]}", kinds[k]) for k in KIND_LABEL if kinds[k]]
         table = [("Geplant", len(jobs))] + table + [None, ("Ziel belegt (übersprungen)", blocked),
                                                     ("Bereits erledigt", len(done))]
+        found = count_images(root, images, done, generated)
+        if found:
+            table.append(("Bilder nicht eingeplant", sum(found.values())))
+        cmd, hints = suggest(images, args.lang, jobs_given, found, len(jobs))
         foot = [vera_note, f"Fehlende Programme: {', '.join(missing)}" if missing else ""]
-        write_report(args.report, "Migrationsplan", root, render_tree(root.name, notes), table, foot)
+        advice = ([f"Vorschlag: {cmd}", "           (gleicher docker-Aufruf, Ablage ohne :ro – vorher Snapshot)"]
+                  if cmd else []) + hints
+        write_report(args.report, "Migrationsplan", root, render_tree(root.name, notes), table,
+                     foot + [f"Vorschlag: `{cmd}`" if cmd else ""] + hints)
         console_table("Migration (Vorschau)", table,
-                      foot + [f"Details: {args.report}" if args.report else "", "Ausführen: run / --apply"])
+                      foot + [f"Details: {args.report}" if args.report else ""] + [""] + advice)
         return
     if missing:
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
