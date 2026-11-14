@@ -25,6 +25,7 @@ cp brief.rtf "$ORDNIG_SRC/Briefe/doppelt.rtf"
 cp konto.xls "$ORDNIG_SRC/Briefe/konto.xls"
 sha_before=$(sha256sum "$ORDNIG_SRC/Briefe/kuendigung.doc")
 
+ordnig version >/dev/null
 ordnig preview >/dev/null
 [[ -z $(find "$ORDNIG_SRC" -newer "$ORDNIG_SRC/Briefe/konto.xls" -type f) ]] || { echo "FAIL: preview wrote files"; exit 1; }
 

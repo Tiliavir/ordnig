@@ -43,8 +43,21 @@ retried. Reports and the checksum baseline live in `/report`, outside the archiv
 3. `preview` is the default; changes need the explicit `run`.
 4. Images are opt-in (`--images`): photos should not become PDFs, scans should.
 5. Existing PDFs get `_pdfa` as suffix instead of replacing them.
-6. Ubuntu 24.04 packages instead of pinned pip versions (fewer moving parts);
-   veraPDF installer is only available as "latest" — CI smoke test guards it.
+6. Ubuntu 24.04 packages instead of pinned pip versions (fewer moving parts).
+   Base image pinned by digest (Dependabot), `apt-get upgrade` at build for
+   security fixes. veraPDF only offers a "latest" installer: each build records
+   all tool versions (`ordnig version`), and the smoke test on amd64 and arm64
+   guards every build.
+7. Release process as in Allmend: newest `CHANGELOG.md` version without a tag
+   is released by CI (image with SBOM + provenance, tag, GitHub release).
+8. Trivy fails the check only on *fixable critical* vulnerabilities; the
+   image is large (LibreOffice, JRE) and unfixable findings would only be noise.
+
+## Quality gates
+
+Unit tests (stdlib `unittest`), shellcheck, smoke test of the real image on
+amd64 and arm64 (veraPDF must confirm 2u), Trivy. `main` only through PRs
+with these checks green.
 
 ## Known limits
 
