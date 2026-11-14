@@ -31,6 +31,7 @@ läufe überspringen Erledigtes und machen bei Fehlern weiter.
 """
 import argparse, csv, os, re, shutil, subprocess, sys, tempfile, time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import Counter, defaultdict
 from pathlib import Path
 
 TEXT = {"doc", "docx", "docm", "dot", "dotx", "rtf", "wpd", "wp", "wps", "wri", "lwp", "sxw", "sdw",
@@ -217,6 +218,66 @@ def process(job, lang):
 
 
 # ----------------------------------------------------------------- main
+# ----------------------------------------------------------------- Ausgabe
+def progress(msg):
+    if sys.stderr.isatty():
+        sys.stderr.write("\r\033[K" + msg[:100]); sys.stderr.flush()
+
+def progress_done():
+    if sys.stderr.isatty():
+        sys.stderr.write("\r\033[K"); sys.stderr.flush()
+
+def console_table(title, rows, footer=()):
+    data = [r for r in rows if r is not None]
+    w = [max(len(str(r[i])) for r in data + [("", "")]) for i in range(2)]
+    w[0] = max(w[0], len(title))
+    line = lambda l, m, r: l + m.join("─" * (x + 2) for x in w) + r
+    out = [line("┌", "┬", "┐"), f"│ {title:<{w[0]}} │ {'':>{w[1]}} │", line("├", "┼", "┤")]
+    for r in rows:
+        out.append(line("├", "┼", "┤") if r is None else f"│ {r[0]:<{w[0]}} │ {str(r[1]):>{w[1]}} │")
+    out.append(line("└", "┴", "┘"))
+    print("\n".join(out + [f for f in footer if f]))
+
+def render_tree(root_name, notes):
+    """notes: {relpath: text} -> Baumzeilen, Ordner mit Anzahl betroffener Dateien."""
+    tree = {}
+    for rel, note in notes.items():
+        n = tree
+        parts = Path(rel).parts
+        for part in parts[:-1]:
+            n = n.setdefault(part + "/", {})
+        n[parts[-1]] = note
+    def count(n):
+        return sum(count(v) if isinstance(v, dict) else 1 for v in n.values())
+    out = [f"{root_name}/  —  {count(tree)} Dateien"]
+    def walk(n, prefix):
+        keys = sorted(n, key=lambda k: (not k.endswith("/"), k.lower()))
+        for i, k in enumerate(keys):
+            branch, cont = ("└── ", "    ") if i == len(keys) - 1 else ("├── ", "│   ")
+            v = n[k]
+            if isinstance(v, dict):
+                c = count(v)
+                out.append(f"{prefix}{branch}{k}  —  {c} {'Datei' if c == 1 else 'Dateien'}")
+                walk(v, prefix + cont)
+            else:
+                out.append(f"{prefix}{branch}{k}  {v}")
+    walk(tree, "")
+    return out
+
+def write_report(path, title, root, tree_lines, table, notes):
+    if not path:
+        return
+    L = [f"# {title}: `{root}`", "", f"Stand {time.strftime('%Y-%m-%d %H:%M')}", "",
+         "Legende: → wird/wurde angelegt · ✓ erledigt · ✗ Fehler · ⊘ übersprungen. Zusammenfassung am Ende.", "",
+         "## Baum", "", "```text"] + tree_lines + ["```", "", "## Zusammenfassung", "", "| | Anzahl |", "|---|---:|"]
+    L += [f"| {r[0].strip()} | {r[1]} |" for r in table if r is not None]
+    L += [""] + [f"- {n}" for n in notes if n]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(L) + "\n", encoding="utf-8", errors="replace")
+
+KIND_LABEL = {"office": "Office → ODF + PDF/A", "odf": "ODF → PDF/A", "pdf": "PDF → PDF/A + OCR", "image": "Bild → PDF/A + OCR"}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", type=Path)
@@ -226,6 +287,7 @@ def main():
     ap.add_argument("-j", "--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--log", type=Path, default=None,
                     help="Protokoll (Standard: <root>/.ordnig/migration_log.csv, reist mit der Ablage)")
+    ap.add_argument("--report", type=Path, default=None, help="Bericht als Markdown-Baum schreiben")
     args = ap.parse_args()
     root = args.root.resolve()
     if args.log is None:
@@ -238,30 +300,40 @@ def main():
             if r["aktion"] == "pdfa" and r["status"] in ("ok", "warnung", "übersprungen"):
                 done.add(r["quelle"])
     images = {e.strip().lower().lstrip(".") for e in args.images.split(",") if e.strip()}
+    progress("Plane …")
     jobs = plan(root, images, done, generated)
+    progress_done()
 
     missing = [t for t in ("soffice", "ocrmypdf", "img2pdf") if not shutil.which(t)]
-    if not shutil.which("verapdf"):
-        print("Hinweis: veraPDF nicht gefunden – Dateien werden als 2b deklariert, nicht 2u.", file=sys.stderr)
+    vera_note = "" if shutil.which("verapdf") else "veraPDF fehlt: PDFs werden als 2b deklariert, nicht 2u."
+    rel = lambda p: str(Path(p).relative_to(root))
 
     if not args.apply:
-        print(f"Vorschau: {len(jobs)} Dateien (bereits erledigt: {len(done)})\n")
-        for j in jobs[:200]:
-            print(f"{j[1].relative_to(root)}")
-            for a in describe(*j): print(f"    {a}")
-        if len(jobs) > 200: print(f"… und {len(jobs)-200} weitere")
-        if missing: print(f"\nFehlende Programme: {', '.join(missing)}")
-        print("\nMit --apply ausführen.")
+        notes, kinds, blocked = {}, Counter(), 0
+        for j in jobs:
+            kind, src, ext, odf_t, pdf_t = j
+            kinds[kind] += 1
+            targets = ([odf_t.name if odf_t else "⊘ ODF (Ziel belegt)"] if kind == "office" else []) + \
+                      [pdf_t.name if pdf_t else "⊘ PDF (Ziel belegt)"]
+            blocked += (kind == "office" and odf_t is None) + (pdf_t is None)
+            notes[rel(src)] = "→ " + " · ".join(targets)
+        table = [(f"  {KIND_LABEL[k]}", kinds[k]) for k in KIND_LABEL if kinds[k]]
+        table = [("Geplant", len(jobs))] + table + [None, ("Ziel belegt (übersprungen)", blocked),
+                                                    ("Bereits erledigt", len(done))]
+        foot = [vera_note, f"Fehlende Programme: {', '.join(missing)}" if missing else ""]
+        write_report(args.report, "Migrationsplan", root, render_tree(root.name, notes), table, foot)
+        console_table("Migration (Vorschau)", table,
+                      foot + [f"Details: {args.report}" if args.report else "", "Ausführen: run / --apply"])
         return
     if missing:
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
 
     args.log.parent.mkdir(parents=True, exist_ok=True)
     new_log = not args.log.exists()
+    results = defaultdict(list)
     with open(args.log, "a", newline="", encoding="utf-8") as lf:
         w = csv.DictWriter(lf, fieldnames=LOG_FIELDS)
         if new_log: w.writeheader()
-        stats = {}
         with ProcessPoolExecutor(max_workers=args.jobs) as ex:
             futs = {ex.submit(process, j, args.lang): j for j in jobs}
             for i, f in enumerate(as_completed(futs), 1):
@@ -272,15 +344,34 @@ def main():
                     rows = [dict(quelle=str(j[1]), aktion="pdfa", ziel="", status="fehler", pdfa="", hinweis=str(e),
                                  zeit=time.strftime("%Y-%m-%d %H:%M:%S"))]
                 for r in rows:
-                    w.writerow(r); key = (r["aktion"], r["status"], r["pdfa"]); stats[key] = stats.get(key, 0) + 1
+                    w.writerow(r); results[r["quelle"]].append(r)
                 lf.flush()
-                last = rows[-1] if rows else {}
-                print(f"[{i}/{len(jobs)}] {j[1].relative_to(root)} -> {last.get('status')} {last.get('pdfa','')}",
-                      file=sys.stderr)
-    print("\nErgebnis:")
-    for (a, s, p), c in sorted(stats.items()):
-        print(f"  {a:5} {s:12} {p:9} {c}")
-    print(f"Protokoll: {args.log.resolve()}")
+                progress(f"Migriere {i}/{len(jobs)}: {j[1].name}")
+    progress_done()
+
+    c = Counter()
+    notes = {}
+    for src, rows in results.items():
+        bits = []
+        for r in rows:
+            name = Path(r["ziel"]).name if r["ziel"] else r["aktion"].upper()
+            if r["status"] == "ok":
+                bits.append(f"✓ {name}" + (f" ({r['pdfa']})" if r["pdfa"] else ""))
+                c["odf_ok" if r["aktion"] == "odf" else f"pdf_{r['pdfa']}"] += 1
+            elif r["status"] == "übersprungen":
+                bits.append(f"⊘ {name}: {r['hinweis']}"); c["skip"] += 1
+            else:
+                bits.append(f"✗ {name}: {r['hinweis'] or r['status']}" + (f" ({r['pdfa']})" if r["pdfa"] else ""))
+                c["fail"] += 1
+            if r["status"] == "ok" and r["pdfa"] and r["hinweis"] and "bestanden" not in r["hinweis"]:
+                bits[-1] += f" – {r['hinweis']}"
+        notes[rel(src)] = " · ".join(bits)
+    table = [("Dateien bearbeitet", len(results)), ("  ODF angelegt", c["odf_ok"]), ("  PDF/A-2u", c["pdf_2u"]),
+             ("  PDF/A-2b", c["pdf_2b"]), None, ("Fehler / ungültig", c["fail"]), ("Übersprungen", c["skip"]),
+             ("Bereits erledigt (früher)", len(done))]
+    foot = [vera_note, f"Protokoll: {args.log}"]
+    write_report(args.report, "Migration", root, render_tree(root.name, notes), table, foot)
+    console_table("Migration", table, foot[:1] + [f"Details: {args.report}" if args.report else foot[1]])
 
 if __name__ == "__main__":
     main()

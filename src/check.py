@@ -18,7 +18,7 @@ Ausgabe (im Ordner --out, Standard ./ablage_report):
   manifest.sha256    Prüfsummen (sha256sum-kompatibel) für spätere Fixity-Checks
   duplicates.csv     Gruppen identischer Dateien
 """
-import argparse, csv, hashlib, os, shutil, subprocess, sys, time, unicodedata, zipfile
+import argparse, csv, re, hashlib, os, shutil, subprocess, sys, time, unicodedata, zipfile
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -120,7 +120,10 @@ def check_integrity(path: Path, ext: str):
                 else:
                     f.seek(0); blob = f.read(200_000)
                     if b"/Encrypt" in blob: issues.append("PDF verschlüsselt")
-                    if b"pdfaid" in blob or b"PDF/A" in blob: issues.append("info:PDF/A-Kennung vorhanden")
+                    m = re.search(rb'pdfaid:part(?:="|>)(\d)', blob)
+                    if m:
+                        c = re.search(rb'pdfaid:conformance(?:="|>)([ABUabu])', blob)
+                        issues.append(f"info:PDF/A-{m.group(1).decode()}{c.group(1).decode().lower() if c else ''}")
             elif ext in ("jpg", "jpeg"):
                 if not head.startswith(b"\xff\xd8"): issues.append("JPEG-Header fehlt")
                 elif b"\xff\xd9" not in tail(f, 64): issues.append("JPEG abgeschnitten (kein EOI)")
@@ -206,7 +209,7 @@ def sha256(path, bufsize=1 << 20):
             h.update(chunk)
     return h.hexdigest()
 
-# ---------------------------------------------------------------- Hauptlauf
+# ---------------------------------------------------------------- Scan
 def scan(root: Path, args):
     files, empty_dirs, dir_errors = [], [], []
     case_map = defaultdict(list)
@@ -222,6 +225,117 @@ def scan(root: Path, args):
             files.append(Path(dirpath) / n)
     return files, empty_dirs, dir_errors, case_map
 
+# ---------------------------------------------------------------- Ausgabe
+def hs(n):
+    for u in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024: return f"{n:.0f} {u}" if u == "B" else f"{n:.1f} {u}"
+        n /= 1024
+    return f"{n:.1f} PB"
+
+def num(n):
+    return f"{n:,}".replace(",", ".")
+
+def progress(msg):
+    """Fortschritt nur im Terminal, eine Zeile, wird überschrieben."""
+    if sys.stderr.isatty():
+        sys.stderr.write("\r\033[K" + msg[:100]); sys.stderr.flush()
+
+def progress_done():
+    if sys.stderr.isatty():
+        sys.stderr.write("\r\033[K"); sys.stderr.flush()
+
+def console_table(title, rows, footer=()):
+    """rows: (label, value, value2) – None = Trennlinie."""
+    data = [r for r in rows if r is not None]
+    w = [max(len(str(r[i])) for r in data + [("", "", "")]) for i in range(3)]
+    w[0] = max(w[0], len(title))
+    line = lambda l, m, r: l + m.join("─" * (x + 2) for x in w) + r
+    out = [line("┌", "┬", "┐"), f"│ {title:<{w[0]}} │ {'':>{w[1]}} │ {'':>{w[2]}} │", line("├", "┼", "┤")]
+    for r in rows:
+        out.append(line("├", "┼", "┤") if r is None else f"│ {r[0]:<{w[0]}} │ {str(r[1]):>{w[1]}} │ {str(r[2]):>{w[2]}} │")
+    out.append(line("└", "┴", "┘"))
+    print("\n".join(out + list(footer)))
+
+RISK_MARK = {"watch": "🟡", "risk": "🔴", "unknown": "⚪", "?": "❓", "done": "☑"}
+
+def render_tree(root_name, rows, empty_dirs, case_map, dir_errors):
+    """Baum aller Dateien; Ordnerzeilen mit Summen, Dateizeilen mit allen Befunden."""
+    tree = {}
+    def node(parts):
+        n = tree
+        for part in parts:
+            n = n.setdefault(part + "/", {})
+        return n
+    for d in empty_dirs:
+        if d != ".": node(Path(d).parts)
+    for r in rows:
+        parts = Path(r["path"]).parts
+        node(parts[:-1])[parts[-1]] = r
+
+    def agg(n):
+        a = Counter()
+        for k, v in n.items():
+            if k.endswith("/") and isinstance(v, dict):
+                a.update(agg(v))
+            else:
+                a["files"] += 1; a["size"] += v["size"]
+                if v["risk"] == "risk": a["risk"] += 1
+                if v["issues"]: a["issues"] += 1
+        n["\0agg"] = a
+        return a
+    agg(tree)
+
+    def dir_note(n, rel):
+        a = n["\0agg"]
+        bits = [f"{num(a['files'])} {'Datei' if a['files'] == 1 else 'Dateien'}", hs(a["size"])] if a["files"] else ["leer"]
+        if a["risk"]: bits.append(f"🔴 {num(a['risk'])}")
+        if a["issues"]: bits.append(f"⚠ {num(a['issues'])}")
+        if case_map.get(rel): bits.append("⚠ Namenskollision: " + ", ".join(case_map[rel]))
+        return " · ".join(bits)
+
+    def file_note(r):
+        bits = [hs(r["size"]), r["mtime"]] if r["mtime"] else [hs(r["size"])]
+        if r["risk"] in RISK_MARK:
+            bits.append(f"{RISK_MARK[r['risk']]} {r['kind'] or '.' + r['ext'] or 'ohne Endung'}"
+                        + (f" → {SUGGEST[r['ext']]}" if r["ext"] in SUGGEST and r["risk"] != "done" else ""))
+        elif r["kind"].startswith("PDF/A"):
+            bits.append(f"✅ {r['kind']}")
+        bits += [f"⚠ {i.strip()}" for i in r["issues"].split(";") if i.strip()]
+        if r.get("dup"): bits.append(f"⧉ {r['dup']}")
+        if r.get("info"): bits.append(f"ℹ {r['info']}")
+        return " · ".join(b for b in bits if b)
+
+    out = [f"{root_name}/  —  {dir_note(tree, '.')}"]
+    def walk(n, prefix, rel):
+        keys = sorted((k for k in n if k != "\0agg"), key=lambda k: (not k.endswith("/"), k.lower()))
+        for i, k in enumerate(keys):
+            last = i == len(keys) - 1
+            branch, cont = ("└── ", "    ") if last else ("├── ", "│   ")
+            v = n[k]
+            if k.endswith("/") and isinstance(v, dict):
+                sub = os.path.join(rel, k[:-1]) if rel != "." else k[:-1]
+                out.append(f"{prefix}{branch}{k}  —  {dir_note(v, sub)}")
+                walk(v, prefix + cont, sub)
+            else:
+                out.append(f"{prefix}{branch}{k}  {file_note(v)}")
+    walk(tree, "", ".")
+    for e in dir_errors:
+        out.append(f"⚠ nicht lesbar: {e}")
+    return out
+
+SUGGEST = {"doc": "ODT + PDF/A", "xls": "ODS", "ppt": "ODP + PDF/A",
+           "wps": "ODT + PDF/A", "wri": "ODT", "wpd": "ODT + PDF/A", "lwp": "ODT + PDF/A",
+           "sxw": "ODT", "sxc": "ODS", "sdw": "ODT", "sdc": "ODS", "mdb": "SQLite + CSV",
+           "accdb": "SQLite + CSV", "wma": "FLAC/Opus", "wmv": "MKV/MP4", "rm": "MKV/MP4",
+           "ra": "FLAC/Opus", "flv": "MP4", "3gp": "MP4", "rar": "auspacken → ZIP/TAR",
+           "ace": "auspacken → ZIP/TAR", "arj": "auspacken → ZIP/TAR", "lzh": "auspacken → ZIP/TAR",
+           "sit": "auspacken → ZIP/TAR", "cab": "auspacken", "msg": "EML", "pst": "MBOX/EML",
+           "pct": "PNG/TIFF", "pcx": "PNG", "wmf": "SVG/PNG", "emf": "SVG/PNG", "cdr": "SVG + PDF",
+           "xps": "PDF/A", "pages": "ODT/PDF", "numbers": "ODS/CSV", "key": "PDF", "pub": "PDF/A",
+           "mobi": "EPUB", "chm": "HTML/PDF", "hlp": "HTML/PDF", "dmg": "auspacken", "nrg": "ISO",
+           "docm": "ODT (Makros prüfen)", "xlsm": "ODS (Makros prüfen)", "lnk": "löschen/dokumentieren"}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", type=Path)
@@ -229,6 +343,8 @@ def main():
     ap.add_argument("--no-hash", action="store_true", help="keine Prüfsummen/Duplikate (schneller)")
     ap.add_argument("--no-integrity", action="store_true", help="keine Strukturprüfung")
     ap.add_argument("--verify", type=Path, help="früheres manifest.sha256 gegen Bestand prüfen")
+    ap.add_argument("--quiet", action="store_true", help="keine Tabelle auf der Konsole")
+    ap.add_argument("--title", default="Prüfung", help="Titel der Konsolentabelle")
     args = ap.parse_args()
 
     root = args.root.resolve()
@@ -236,17 +352,24 @@ def main():
         sys.exit(f"Kein Verzeichnis: {root}")
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
-    print(f"Scanne {root} …", file=sys.stderr)
+    progress(f"Scanne {root} …")
     paths, empty_dirs, dir_errors, case_map = scan(root, args)
-    print(f"{len(paths)} Dateien gefunden, analysiere …", file=sys.stderr)
+    progress(f"{num(len(paths))} Dateien, erkenne Typen …")
     mimes = detect_mimes(paths)
 
+    # Bereits migrierte Originale (aus dem Protokoll von migrate.py)
+    migrated = defaultdict(list)
+    log = root / ".ordnig" / "migration_log.csv"
+    if log.exists():
+        for r in csv.DictReader(open(log, encoding="utf-8", errors="surrogateescape")):
+            if r["status"] == "ok" and r["ziel"] and Path(r["ziel"]).exists():
+                migrated[os.path.relpath(r["quelle"], root)].append(Path(r["ziel"]).name)
+
     rows, hashes = [], {}
-    by_size = defaultdict(list)
     now = time.time()
     for i, p in enumerate(paths, 1):
-        if i % 5000 == 0:
-            print(f"  {i}/{len(paths)}", file=sys.stderr)
+        if i % 500 == 0:
+            progress(f"Analysiere {num(i)}/{num(len(paths))}")
         rel = str(p.relative_to(root))
         name = p.name
         ext = name.rsplit(".", 1)[-1].lower() if "." in name.lstrip(".") else ""
@@ -272,31 +395,38 @@ def main():
             issues.append("Temp/Backup-Datei")
         if not ext: issues.append("Keine Dateiendung")
         risk, kind = FORMATS.get(ext, ("unknown", ""))
+        if rel in migrated and risk in ("risk", "watch", "unknown"):
+            risk, kind = "done", f"{kind or '.' + ext} → {', '.join(migrated[rel])}"
         mime = mimes.get(p, "")
         if mime_mismatch(ext, mime):
             issues.append(f"Endung passt nicht zum Inhalt ({mime})")
         if not args.no_integrity and size > 0:
             for iss in check_integrity(p, ext):
-                if iss.startswith("info:"): kind += " · " + iss[5:]
+                if iss.startswith("info:PDF/A"):
+                    kind = iss[5:]
+                    if risk == "watch": risk = "ok"
+                elif iss.startswith("info:"): kind += " · " + iss[5:]
                 else: issues.append(iss)
-        if not args.no_hash and size > 0:
-            by_size[size].append(p)
         rows.append(dict(path=rel, size=size, mtime=datetime.fromtimestamp(mt).strftime("%Y-%m-%d"),
                          ext=ext, mime=mime, risk=risk, kind=kind, issues="; ".join(issues), _p=p))
 
     # Prüfsummen (alle Dateien, fürs Manifest) – Duplikate daraus
     dup_groups = []
     if not args.no_hash:
-        print("Berechne Prüfsummen …", file=sys.stderr)
-        for r in rows:
-            p = r.get("_p")
-            if p is None or r["size"] == 0: continue
-            try: hashes[p] = sha256(p)
+        todo = [r for r in rows if r.get("_p") is not None and r["size"] > 0]
+        for i, r in enumerate(todo, 1):
+            if i % 200 == 0: progress(f"Prüfsummen {num(i)}/{num(len(todo))}")
+            try: hashes[r["_p"]] = sha256(r["_p"])
             except OSError as e: r["issues"] += f"; Lesefehler beim Hashen: {e.strerror}"
         groups = defaultdict(list)
         for p, h in hashes.items(): groups[h].append(p)
         dup_groups = sorted((g for g in groups.values() if len(g) > 1),
                             key=lambda g: -g[0].stat().st_size * (len(g) - 1))
+        by_path = {r.get("_p"): r for r in rows}
+        for gi, g in enumerate(dup_groups, 1):
+            for p in g:
+                others = [str(q.relative_to(root)) for q in g if q != p]
+                by_path[p]["dup"] = f"Duplikat (Gruppe {gi}): " + ", ".join(others[:3]) + (f" +{len(others)-3}" if len(others) > 3 else "")
         with open(args.out / "manifest.sha256", "w", encoding="utf-8", errors="surrogateescape") as m:
             for r in rows:
                 p = r.get("_p")
@@ -307,9 +437,10 @@ def main():
                 for p in g: w.writerow([gi, hashes[p], p.stat().st_size, str(p.relative_to(root))])
 
     # Fixity-Verify
-    verify_lines = []
+    vstat = None
     if args.verify:
-        print("Vergleiche mit altem Manifest …", file=sys.stderr)
+        progress("Vergleiche mit altem Manifest …")
+        by_rel = {r["path"]: r for r in rows}
         cur = {r["path"]: hashes.get(r.get("_p")) for r in rows}
         old = {}
         for line in open(args.verify, encoding="utf-8", errors="surrogateescape"):
@@ -320,19 +451,22 @@ def main():
         new = [p for p in cur if p not in old and cur[p]]
         oldh = defaultdict(list)
         for p, h in old.items(): oldh[h].append(p)
-        moved = [(oldh[cur[p]][0], p) for p in new if cur[p] in oldh and oldh[cur[p]][0] in missing]
-        verify_lines = [f"- Geändert (Inhalt anders, gleicher Pfad – **Bitrot oder bewusst editiert?**): {len(changed)}",
-                        f"- Fehlend: {len(missing)} (davon verschoben/umbenannt erkannt: {len(moved)})",
-                        f"- Neu: {len(new)}"]
-        for p in changed[:50]: verify_lines.append(f"  - geändert: `{p}`")
-        for p in [m for m in missing if m not in {a for a, _ in moved}][:50]: verify_lines.append(f"  - fehlt: `{p}`")
+        moved = {p: oldh[cur[p]][0] for p in new if cur[p] in oldh and oldh[cur[p]][0] in missing}
+        for p in changed:
+            by_rel[p]["issues"] = "; ".join(filter(None, [by_rel[p]["issues"], "Inhalt geändert seit letzter Prüfung (Bitrot oder bearbeitet?)"]))
+        for p in new:
+            by_rel[p]["info"] = f"verschoben von {moved[p]}" if p in moved else "neu seit letzter Prüfung"
+        gone = [p for p in missing if p not in set(moved.values())]
+        vstat = dict(changed=len(changed), gone=gone, moved=len(moved), new=len(new) - len(moved))
+    progress_done()
 
     # CSV
     with open(args.out / "files.csv", "w", newline="", encoding="utf-8", errors="surrogateescape") as f:
-        w = csv.DictWriter(f, fieldnames=["path", "size", "mtime", "ext", "mime", "risk", "kind", "issues"], extrasaction="ignore")
+        w = csv.DictWriter(f, fieldnames=["path", "size", "mtime", "ext", "mime", "risk", "kind", "issues", "dup", "info"],
+                           extrasaction="ignore")
         w.writeheader(); w.writerows(rows)
 
-    # Bericht
+    # Kennzahlen
     total = sum(r["size"] for r in rows)
     risk_cnt, risk_size = Counter(), Counter()
     ext_cnt, ext_size = Counter(), Counter()
@@ -346,88 +480,71 @@ def main():
             key = iss.split("(")[0].strip() if "Endung passt" in iss or "Pfad sehr lang" in iss else iss
             key = "ZIP defekt" if key.startswith("ZIP defekt bei") else key
             issue_cnt[key] += 1
+    with_issues = sum(1 for r in rows if r["issues"])
+    waste = sum(g[0].stat().st_size * (len(g) - 1) for g in dup_groups)
+    n_case = sum(map(len, case_map.values()))
+    labels = {"ok": "✅ archivtauglich", "done": "☑ migriert (Kopie daneben)", "watch": "🟡 beobachten",
+              "risk": "🔴 migrieren", "unknown": "⚪ unbekannt", "?": "❓ nicht lesbar"}
 
-    def hs(n):
-        for u in ("B", "KB", "MB", "GB", "TB"):
-            if n < 1024: return f"{n:.0f} {u}" if u == "B" else f"{n:.1f} {u}"
-            n /= 1024
-        return f"{n:.1f} PB"
-
+    # Bericht: Baum, dann Zusammenfassung
     L = [f"# Ablage-Prüfung: `{root}`", "",
-         f"Stand {datetime.now():%Y-%m-%d %H:%M} · {len(rows):,} Dateien · {hs(total)} · Laufzeit {time.time()-t0:.0f}s".replace(",", "."), ""]
+         f"Stand {datetime.now():%Y-%m-%d %H:%M} · {num(len(rows))} Dateien · {hs(total)} · Laufzeit {time.time()-t0:.0f}s", "",
+         "Legende: 🔴 migrieren · ☑ migriert · 🟡 beobachten · ⚪ unbekanntes Format · ⚠ Befund · ⧉ Duplikat · ℹ Hinweis. "
+         "Ordnerzeilen: Summen inkl. Unterordner. Zusammenfassung am Ende.", ""]
     if not shutil.which("file"):
         L += ["> Hinweis: `file` nicht gefunden – Endung-vs-Inhalt-Prüfung übersprungen.", ""]
-    L += ["## Langlebigkeit der Formate", "", "| Bewertung | Dateien | Größe |", "|---|---:|---:|"]
-    labels = {"ok": "✅ archivtauglich", "watch": "🟡 beobachten", "risk": "🔴 migrieren", "unknown": "⚪ unbekannt", "?": "❓ nicht lesbar"}
-    for k in ("ok", "watch", "risk", "unknown", "?"):
-        if risk_cnt[k]: L.append(f"| {labels[k]} | {risk_cnt[k]} | {hs(risk_size[k])} |")
+    L += ["## Baum", "", "```text"] + render_tree(root.name or str(root), rows, empty_dirs, case_map, dir_errors) + ["```", ""]
+
+    L += ["## Zusammenfassung", "", "### Langlebigkeit der Formate", "", "| Bewertung | Dateien | Größe |", "|---|---:|---:|"]
+    for k in ("ok", "done", "watch", "risk", "unknown", "?"):
+        if risk_cnt[k]: L.append(f"| {labels[k]} | {num(risk_cnt[k])} | {hs(risk_size[k])} |")
     risky = Counter({e: c for e, c in ext_cnt.items() if FORMATS.get(e, ("",))[0] == "risk"})
     if risky:
         L += ["", "**Migrationskandidaten** (Format → Vorschlag):", ""]
-        sugg = {"doc": "ODT/DOCX + PDF/A", "xls": "ODS/XLSX (+CSV)", "ppt": "ODP/PPTX + PDF/A",
-                "wps": "ODT + PDF/A", "wri": "ODT/TXT", "wpd": "ODT + PDF/A", "lwp": "ODT + PDF/A",
-                "sxw": "ODT", "sxc": "ODS", "sdw": "ODT", "sdc": "ODS", "mdb": "SQLite + CSV",
-                "accdb": "SQLite + CSV", "wma": "FLAC (verlustfrei aus Quelle) / Opus", "wmv": "MKV/MP4 (H.264)",
-                "rm": "MKV/MP4", "ra": "FLAC/Opus", "flv": "MP4", "3gp": "MP4", "rar": "auspacken → ZIP/TAR",
-                "ace": "auspacken → ZIP/TAR", "arj": "auspacken → ZIP/TAR", "lzh": "auspacken → ZIP/TAR",
-                "sit": "auspacken → ZIP/TAR", "cab": "auspacken", "msg": "EML", "pst": "MBOX/EML",
-                "pct": "PNG/TIFF", "pcx": "PNG", "wmf": "SVG/PNG", "emf": "SVG/PNG", "cdr": "SVG + PDF",
-                "xps": "PDF/A", "pages": "ODT/PDF", "numbers": "ODS/CSV", "key": "PDF", "pub": "PDF/A",
-                "mobi": "EPUB", "chm": "HTML/PDF", "hlp": "HTML/PDF", "dmg": "auspacken", "nrg": "ISO",
-                "docm": "DOCX/ODT (Makros prüfen)", "xlsm": "XLSX/ODS (Makros prüfen)", "lnk": "löschen oder als Text dokumentieren"}
         for e, c in risky.most_common():
-            L.append(f"- `.{e}` – {FORMATS[e][1]}: {c} Dateien, {hs(ext_size[e])} → {sugg.get(e, 'prüfen')}")
+            L.append(f"- `.{e}` – {FORMATS[e][1]}: {num(c)} Dateien, {hs(ext_size[e])} → {SUGGEST.get(e, 'prüfen')}")
     unk = Counter({e: c for e, c in ext_cnt.items() if e not in FORMATS})
     if unk:
         L += ["", "**Unbekannte Endungen** (Top 20, bitte einordnen):", "",
               ", ".join(f"`.{e}` ({c})" for e, c in unk.most_common(20))]
-
-    L += ["", "## Top-Formate", "", "| Endung | Dateien | Größe |", "|---|---:|---:|"]
+    L += ["", "### Top-Formate", "", "| Endung | Dateien | Größe |", "|---|---:|---:|"]
     for e, c in ext_cnt.most_common(15):
-        L.append(f"| {e} | {c} | {hs(ext_size[e])} |")
-
-    L += ["", "## Konsistenz & Integrität", ""]
+        L.append(f"| {e} | {num(c)} | {hs(ext_size[e])} |")
+    L += ["", "### Konsistenz & Integrität", ""]
     if issue_cnt:
-        L += ["| Befund | Anzahl |", "|---|---:|"]
-        for k, c in issue_cnt.most_common(): L.append(f"| {k} | {c} |")
-        L += ["", "Details pro Datei: Spalte `issues` in `files.csv` (z. B. in LibreOffice filtern)."]
+        L += ["| Befund | Anzahl |", "|---|---:|"] + [f"| {k} | {num(c)} |" for k, c in issue_cnt.most_common()]
     else:
         L.append("Keine Auffälligkeiten.")
-    if case_map:
-        L += ["", f"**Namen, die sich nur in Groß/Kleinschreibung unterscheiden** ({sum(map(len, case_map.values()))}) – "
-              "kollidieren unter Windows/macOS:", ""]
-        for d, ns in list(case_map.items())[:20]: L.append(f"- `{d}/`: {', '.join(ns)}")
-    if empty_dirs:
-        L += ["", f"**Leere Ordner:** {len(empty_dirs)}", ""] + [f"- `{d}`" for d in empty_dirs[:20]]
-        if len(empty_dirs) > 20: L.append(f"- … und {len(empty_dirs)-20} weitere")
-    if dir_errors:
-        L += ["", f"**Nicht lesbare Ordner:** {len(dir_errors)}", ""] + [f"- {e}" for e in dir_errors[:20]]
-
+    extra = [("Namenskollisionen (Groß/Klein)", n_case), ("Leere Ordner", len(empty_dirs)), ("Nicht lesbare Ordner", len(dir_errors))]
+    L += [""] + [f"- {k}: {v}" for k, v in extra if v]
     if dup_groups:
-        waste = sum(g[0].stat().st_size * (len(g) - 1) for g in dup_groups)
-        L += ["", "## Duplikate", "",
-              f"{len(dup_groups)} Gruppen identischer Dateien, {hs(waste)} redundant. Größte:", ""]
-        for g in dup_groups[:15]:
-            L.append(f"- {hs(g[0].stat().st_size)} × {len(g)}: " + " | ".join(f"`{p.relative_to(root)}`" for p in g[:4]))
-        L.append("\nAlle Gruppen: `duplicates.csv`.")
-
+        L += ["", "### Duplikate", "", f"{num(len(dup_groups))} Gruppen, {hs(waste)} redundant. "
+              "Im Baum mit ⧉ markiert; alle Gruppen in `duplicates.csv`."]
     if years:
-        L += ["", "## Dateien nach Änderungsjahr", "", "```"]
+        L += ["", "### Dateien nach Änderungsjahr", "", "```text"]
         mx = max(years.values())
-        for y in sorted(years): L.append(f"{y} {'█' * max(1, round(40 * years[y] / mx))} {years[y]}")
-        L.append("```")
-
-    if verify_lines:
-        L += ["", "## Fixity-Vergleich mit " + f"`{args.verify}`", ""] + verify_lines
-
-    if not args.no_hash:
-        L += ["", "## Nächster Schritt: Fixity", "",
-              "`manifest.sha256` an einem **zweiten Ort** aufbewahren und regelmäßig prüfen:", "",
-              f"```\npython3 check.py {root} --verify {args.out}/manifest.sha256 --out report_neu\n"
-              f"# oder direkt:  cd {root} && sha256sum -c --quiet /pfad/manifest.sha256\n```"]
-
+        L += [f"{y} {'█' * max(1, round(40 * years[y] / mx))} {years[y]}" for y in sorted(years)] + ["```"]
+    if vstat:
+        L += ["", f"### Vergleich mit `{args.verify}`", "",
+              f"- Inhalt geändert: {vstat['changed']} (im Baum mit ⚠ markiert)",
+              f"- Verschoben/umbenannt: {vstat['moved']} · neu: {vstat['new']} (ℹ im Baum)",
+              f"- Fehlt: {len(vstat['gone'])}"] + [f"  - `{p}`" for p in vstat["gone"][:200]]
     (args.out / "report.md").write_text("\n".join(L) + "\n", encoding="utf-8", errors="replace")
-    print(f"Fertig: {args.out/'report.md'}", file=sys.stderr)
+
+    if args.quiet:
+        return
+    t = [("Dateien gesamt", num(len(rows)), hs(total))]
+    t += [(f"  {labels[k][2:]}", num(risk_cnt[k]), hs(risk_size[k])) for k in ("ok", "done", "watch", "risk", "unknown", "?") if risk_cnt[k]]
+    t += [None, ("Dateien mit Befunden", num(with_issues), "")]
+    t += [(f"  {k[:38]}", num(c), "") for k, c in issue_cnt.most_common(5)]
+    if len(issue_cnt) > 5: t.append((f"  … {len(issue_cnt) - 5} weitere Arten", "", ""))
+    t.append(None)
+    if not args.no_hash: t.append(("Duplikat-Gruppen", num(len(dup_groups)), hs(waste) + " redundant" if waste else ""))
+    t += [(k, num(v), "") for k, v in extra if v]
+    if vstat:
+        t += [None, ("Seit letzter Prüfung geändert", num(vstat["changed"]), ""), ("  fehlt", num(len(vstat["gone"])), ""),
+              ("  verschoben", num(vstat["moved"]), ""), ("  neu", num(vstat["new"]), "")]
+    console_table(args.title, t, [f"Details: {args.out / 'report.md'}"])
 
 if __name__ == "__main__":
     main()

@@ -55,7 +55,9 @@ ordnig run --images png >/dev/null
 [[ $(find "$ORDNIG_SRC" -type f | wc -l) == "$before" ]] || fail "second run created files"
 
 ordnig verify >/dev/null
-grep -q 'Geändert.*: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
+grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
+grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
+grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 
 echo "--- migration log"; cut -d, -f2,4-6 "$log"
 echo "SMOKE TEST OK"
