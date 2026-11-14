@@ -152,15 +152,16 @@ def parse_verapdf(xml_text: str):
 def verapdf_batch(pdfs, flavour):
     """Ein JVM-Start für viele Dateien. Fallback auf Einzelaufrufe, wenn die Ausgabe nicht lesbar ist."""
     if not pdfs:
-        return {}
+        return {}, True
     code, out = run(["verapdf", "--flavour", flavour, *map(str, pdfs)], timeout=3600, tail=None)
     try:
         res = parse_verapdf(out)
         if all(p.name in res for p in pdfs):
-            return {p: res[p.name] for p in pdfs}
+            return {p: res[p.name] for p in pdfs}, True
     except Exception:
         pass
-    return {p: bool(verapdf(p, flavour)) for p in pdfs}
+    # Ausgabe nicht lesbar: einzeln prüfen und das im Protokoll sagen (kein stiller Rückfall)
+    return {p: bool(verapdf(p, flavour)) for p in pdfs}, False
 
 def validate_all(targets, progress_cb=lambda i, n: None):
     """targets: Liste fertiger PDFs (deklariert 2b). Prüft Kopien auf 2u, dann ggf. 2b, und ersetzt
@@ -174,19 +175,20 @@ def validate_all(targets, progress_cb=lambda i, n: None):
             for k, t in enumerate(chunk):
                 c = Path(td) / f"{k:04d}.pdf"
                 shutil.copy2(t, c); set_conformance(c, "U"); copies[c] = t
-            ok_u = verapdf_batch(list(copies), "2u")
+            ok_u, batch_u = verapdf_batch(list(copies), "2u")
             failed = [c for c, ok in ok_u.items() if not ok]
             for c in failed:
                 set_conformance(c, "B")
-            ok_b = verapdf_batch(failed, "2b")
+            ok_b, batch_b = verapdf_batch(failed, "2b") if failed else ({}, True)
+            note = "" if batch_u and batch_b else " (Einzelprüfung: veraPDF-Stapelausgabe nicht lesbar)"
             for c, t in copies.items():
                 if ok_u[c]:
                     st = t.stat(); shutil.copyfile(c, t); os.utime(t, (st.st_atime, st.st_mtime))
-                    results[t] = ("2u", "veraPDF bestanden")
+                    results[t] = ("2u", "veraPDF bestanden" + note)
                 elif ok_b[c]:
-                    results[t] = ("2b", "2u nicht erfüllt, 2b bestanden")
+                    results[t] = ("2b", "2u nicht erfüllt, 2b bestanden" + note)
                 else:
-                    results[t] = ("ungültig", "veraPDF: weder 2u noch 2b")
+                    results[t] = ("ungültig", "veraPDF: weder 2u noch 2b" + note)
     return results
 
 def finalize_pdfa(pdf: Path):

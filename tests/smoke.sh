@@ -53,6 +53,7 @@ gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Briefe/kuendigung.pd
 
 log=$ORDNIG_SRC/.ordnig/migration_log.csv
 grep -q ',fehler,' "$log" && { cat "$log"; fail "conversion errors"; }
+grep -q 'Einzelprüfung' "$log" && { cat "$log"; fail "veraPDF batch output not parsed"; }
 if command -v verapdf >/dev/null; then
   bad=$(awk -F, '$2=="pdfa" && $5!="2u"' "$log")
   [[ -z $bad ]] || { echo "$bad"; fail "not all PDFs are PDF/A-2u"; }
