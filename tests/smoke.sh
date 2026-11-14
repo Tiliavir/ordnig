@@ -15,11 +15,13 @@ soffice --headless --convert-to doc brief.txt >/dev/null
 soffice --headless --convert-to rtf brief.txt >/dev/null
 soffice --headless --convert-to xls konto.csv >/dev/null
 soffice --headless --convert-to pdf scan.txt >/dev/null
+soffice --headless --convert-to 'pdf:writer_pdf_Export:{"SelectPdfVersion":{"type":"long","value":"2"}}' --outdir pdfa brief.txt >/dev/null
 # image-only "scan": render text PDF to a 300 dpi bitmap, wrap it again
 gs -q -dNOPAUSE -dBATCH -sDEVICE=pnggray -r300 -o scan.png scan.pdf
 img2pdf scan.png -o "$ORDNIG_SRC/Scans/scan_ohne_text.pdf"
 cp scan.png "$ORDNIG_SRC/Scans/rechnung.png"
 cp brief.doc "$ORDNIG_SRC/Briefe/kuendigung.doc"
+cp pdfa/brief.pdf "$ORDNIG_SRC/Briefe/schon_pdfa.pdf"      # already PDF/A with text -> must stay alone
 cp brief.doc "$ORDNIG_SRC/Briefe/doppelt.doc"
 cp brief.rtf "$ORDNIG_SRC/Briefe/doppelt.rtf"
 cp konto.xls "$ORDNIG_SRC/Briefe/konto.xls"
@@ -39,6 +41,10 @@ for f in Briefe/kuendigung.odt Briefe/kuendigung.pdf Briefe/konto.ods Briefe/kon
   [[ -s $ORDNIG_SRC/$f ]] || fail "missing $f"
 done
 [[ $(sha256sum "$ORDNIG_SRC/Briefe/kuendigung.doc") == "$sha_before" ]] || fail "original changed"
+[[ ! -e $ORDNIG_SRC/Briefe/schon_pdfa_pdfa.pdf ]] || fail "existing PDF/A was converted again"
+python3 -I -c 'import pikepdf,sys; p = pikepdf.open(sys.argv[1]); sys.exit(0 if "/StructTreeRoot" in p.Root else 1)' \
+  "$ORDNIG_SRC/Briefe/kuendigung.pdf" || fail "office PDF lost its tagging"
+grep -q 'Langsamste Dateien' "$ORDNIG_OUT"/*-migration.md || fail "timing missing in report"
 
 ocr=$(gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Scans/scan_ohne_text_pdfa.pdf")
 grep -q 4711 <<<"$ocr" || fail "OCR text missing"
@@ -47,8 +53,10 @@ gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Briefe/kuendigung.pd
 
 log=$ORDNIG_SRC/.ordnig/migration_log.csv
 grep -q ',fehler,' "$log" && { cat "$log"; fail "conversion errors"; }
+grep -q 'Einzelprüfung' "$log" && { cat "$log"; fail "veraPDF batch output not parsed"; }
 if command -v verapdf >/dev/null; then
-  bad=$(awk -F, '$2=="pdfa" && $5!="2u"' "$log")
+  # newest row per target wins (pending row first, verdict appended after the veraPDF batch)
+  bad=$(awk -F, '$2=="pdfa" {last[$3]=$0; v[$3]=$5} END {for (k in v) if (v[k] != "2u") print last[k]}' "$log")
   [[ -z $bad ]] || { echo "$bad"; fail "not all PDFs are PDF/A-2u"; }
 fi
 
@@ -62,5 +70,6 @@ grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify r
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 
-echo "--- migration log"; cut -d, -f2,4-6 "$log"
+echo "--- migration log (newest row per target)"
+awk -F, 'NR>1 {k=$2 FS $3; row[k]=$2 FS $4 FS $5 FS $6 FS $8} END {for (k in row) print row[k]}' "$log" | sort
 echo "SMOKE TEST OK"

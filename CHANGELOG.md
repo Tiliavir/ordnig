@@ -4,6 +4,24 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
+## [0.6.0] - 2026-11-14
+
+### Changed
+
+- Faster conversion (test archive: 70 s → 44 s on 2 cores):
+  - Office files: the PDF/A from LibreOffice is used directly when every page
+    has text; OCR runs only for pages without text. Keeps the PDF tagging.
+  - Rotating and deskewing scans is opt-in: `--fix-scans` (≈ 40 % more OCR
+    time). `preview` suggests it when scans are found.
+  - PDFs that already are PDF/A with text on every page are left alone.
+  - One file per CPU with one OCR thread each (`-j` sets the number of files)
+    instead of half as many files with all CPUs each.
+  - veraPDF validates in batches of 50 (one JVM start per batch); the file
+    that passed is exactly the one put in place.
+- The migration log has a column `sekunden`; the report lists the slowest
+  files, the console shows run time and average per file. Old logs are
+  upgraded on the next run.
+
 ## [0.5.0] - 2026-11-14
 
 ### Added

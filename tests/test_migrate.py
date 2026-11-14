@@ -75,6 +75,83 @@ class Suggest(unittest.TestCase):
         self.assertEqual(dict(migrate.count_images(root, {"png"}, set(), set())), {"tif": 1, "tiff": 1, "jpg": 1})
 
 
+try:
+    import pikepdf
+except ImportError:
+    pikepdf = None
+
+
+class Verapdf(unittest.TestCase):
+    XML = """<?xml version="1.0" encoding="utf-8"?>
+<report><buildInformation/><jobs>
+<job><item size="10"><name>/tmp/v/0000.pdf</name></item>
+  <validationReport jobEndStatus="normal" profileName="PDF/A-2U" isCompliant="true"/></job>
+<job><item size="10"><name>/tmp/v/0001.pdf</name></item>
+  <validationReport jobEndStatus="normal" profileName="PDF/A-2U" isCompliant="false"/></job>
+<job><item size="10"><name>/tmp/v/0002.pdf</name></item><taskException/></job>
+</jobs></report>"""
+
+    def test_parse_batch(self):
+        self.assertEqual(migrate.parse_verapdf("log noise\n" + self.XML),
+                         {"0000.pdf": True, "0001.pdf": False, "0002.pdf": False})
+
+
+@unittest.skipUnless(pikepdf, "pikepdf not installed")
+class InspectPdf(unittest.TestCase):
+    def make(self, text_pages, image_pages, pdfa=None):
+        pdf = pikepdf.new()
+        font = pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.Font, Subtype=pikepdf.Name.Type1,
+                                                    BaseFont=pikepdf.Name.Helvetica))
+        for _ in range(text_pages):
+            pdf.add_blank_page().obj.Resources = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=font))
+        for _ in range(image_pages):
+            pdf.add_blank_page()
+        path = Path(tempfile.mkdtemp()) / "t.pdf"
+        if pdfa:
+            with pdf.open_metadata() as m:
+                m["pdfaid:part"], m["pdfaid:conformance"] = pdfa
+        pdf.save(path)
+        return path
+
+    def test_pages_without_text(self):
+        self.assertEqual(migrate.inspect_pdf(self.make(2, 1)), (3, 1, ""))
+
+    def test_pdfa_identifier(self):
+        self.assertEqual(migrate.inspect_pdf(self.make(1, 0, ("2", "U"))), (1, 0, "2u"))
+
+    def test_existing_pdfa_with_text_is_not_planned(self):
+        root = Path(tempfile.mkdtemp())
+        self.make(1, 0, ("1", "B")).rename(root / "fertig.pdf")
+        self.make(1, 1, ("2", "B")).rename(root / "teilscan.pdf")
+        info = {}
+        jobs = migrate.plan(root, set(), set(), set(), info)
+        self.assertEqual([j[1].name for j in jobs], ["teilscan.pdf"])
+        self.assertEqual([p.name for p in info["already_pdfa"]], ["fertig.pdf"])
+        self.assertEqual(info["scan_pdfs"], 1)
+
+
+class Helpers(unittest.TestCase):
+    def test_fix_scans_hint_and_flag(self):
+        from collections import Counter
+        _, hints = migrate.suggest(set(), "deu+eng", None, Counter(), planned=3, scan_pdfs=2)
+        self.assertIn("--fix-scans", hints[-1]); self.assertIn("2 PDF mit Scan-Seiten", hints[-1])
+        cmd, hints = migrate.suggest(set(), "deu+eng", None, Counter(tif=1), planned=1, fix_scans=True)
+        self.assertEqual(cmd, "ordnig run --images tif --fix-scans")
+        self.assertFalse(any("--fix-scans" in h for h in hints))
+
+    def test_upgrade_old_log(self):
+        log = Path(tempfile.mkdtemp()) / "migration_log.csv"
+        log.write_text("quelle,aktion,ziel,status,pdfa,hinweis,zeit\n/a.doc,pdfa,/a.pdf,ok,2u,x,2026-11-14\n")
+        migrate.upgrade_log(log)
+        lines = log.read_text().splitlines()
+        self.assertEqual(lines[0], ",".join(migrate.LOG_FIELDS))
+        self.assertTrue(lines[1].startswith("/a.doc,pdfa,/a.pdf,ok,2u,x,2026-11-14"))
+
+    def test_duration(self):
+        self.assertEqual(migrate.fmt_dur(65), "1:05 min")
+        self.assertEqual(migrate.fmt_dur(3725), "1:02:05")
+
+
 class Tree(unittest.TestCase):
     def test_render(self):
         out = migrate.render_tree("ablage", {"A/x.doc": "→ x.odt", "b.pdf": "→ b_pdfa.pdf"})

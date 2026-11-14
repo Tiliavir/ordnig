@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash # -eo pipefail: a failing command in a pipe fails the step
+
 jobs:
   unit:
     name: Lint and unit tests

@@ -20,11 +20,19 @@ an additional file. One container, no setup on the host.
 ## Conversion flow
 
 1. Office file → ODF next to it (LibreOffice).
-2. Office/ODF → PDF/A-2 (LibreOffice, tagged, fonts embedded) →
-   OCRmyPDF `--skip-text` (only pages without text get OCR).
-3. PDF → OCRmyPDF `--skip-text`; image → img2pdf → OCRmyPDF.
-4. Set XMP `pdfaid:conformance=U`, validate with veraPDF `--flavour 2u`.
-   Fail → set `B`, validate 2b. Result in the log.
+2. Office/ODF → PDF/A-2 (LibreOffice, tagged, fonts embedded). Used as is
+   when every page has text; otherwise OCRmyPDF `--skip-text` for the pages
+   without text (tagging is lost then).
+3. PDF → OCRmyPDF `--skip-text`; image → img2pdf → OCRmyPDF. PDFs that are
+   already PDF/A with text on every page are skipped. `--fix-scans` adds
+   rotation and deskew (≈ 40 % more OCR time).
+4. Workers place the PDF declared as 2b. Afterwards veraPDF validates in
+   batches of 50: a copy declared `U` is checked for 2u; on success exactly
+   that copy replaces the file, otherwise the 2b declaration is checked.
+   Result in the log (newest row wins).
+
+Parallelism: one file per CPU, one OCR thread per file (no oversubscription).
+Per-file seconds are logged; the report lists the slowest files.
 5. Output gets the original's modification time.
 
 Targets are reserved during planning so parallel jobs never collide
