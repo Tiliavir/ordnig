@@ -97,7 +97,7 @@ retried. Reports and the checksum baseline live in `/report`, outside the archiv
 12. Unsure, unreadable, no year for `{jahr}`, or duplicate → `_Prüfen/` with the
     reason; nothing is guessed. Wrong config (unknown keys, bad patterns,
     missing folders) stops the run with all errors listed.
-13. Files keep their names; only collisions get `_2`. A naming scheme can come later.
+13. Files keep their names; only collisions get `_2`. (Markus: no naming scheme.)
 14. Rules live with the inbox (`00_Eingang/.ordnig/regeln.toml`), the text cache in
     `/report/cache/` (preview writes nothing to the archive).
 
