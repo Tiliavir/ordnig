@@ -42,6 +42,20 @@ docker run --rm -v /volume1/ablage:/ablage:ro -v "$PWD/report:/report" \
   ghcr.io/tiliavir/ordnig verify
 ```
 
+### Sort the inbox
+
+`sort` files new documents from `00_Eingang` into the archive. It learns from
+the archive itself (every folder is a class, year folders become `{jahr}`) and
+follows your rules in `00_Eingang/.ordnig/regeln.toml` first
+([example](docs/regeln.example.toml)). Anything it is unsure about goes to
+`00_Eingang/_Prüfen/` with a suggestion in the report.
+
+```sh
+docker run … ghcr.io/tiliavir/ordnig sort --eval    # how well would it sort? (uses the archive only)
+docker run … ghcr.io/tiliavir/ordnig sort           # preview
+docker run … ghcr.io/tiliavir/ordnig sort --apply   # move the files
+```
+
 ### Check for bit rot regularly
 
 Run `verify` monthly, e.g. as a Synology *Task Scheduler* task (user-defined

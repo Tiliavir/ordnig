@@ -4,7 +4,16 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
-## [Unreleased]
+## [0.7.0] - 2026-11-18
+
+### Added
+
+- `ordnig sort` files new documents from `00_Eingang` into the archive: rules
+  from `00_Eingang/.ordnig/regeln.toml` first, then the most similar documents
+  already in the archive. Year folders are filled from the date in the letter.
+  Unsure, unreadable or duplicate files go to `00_Eingang/_Prüfen/` with the
+  reason and a suggestion. Preview unless `--apply`; `--eval` measures accuracy
+  on the archive itself.
 
 ### Changed
 
