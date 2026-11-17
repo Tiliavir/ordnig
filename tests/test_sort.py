@@ -81,6 +81,47 @@ class Config(Tmp):
         self.assertIsNone(pick("Baloise Kündigung"))
 
 
+class Copies(Tmp):
+    def setUp(self):
+        super().setUp()
+        for d in ("Versicherung", "Steuer"): (self.root / d).mkdir()
+
+    def cfg(self, toml):
+        self.put("regeln.toml", toml)
+        return sort.load_config(self.root / "regeln.toml", self.root)
+
+    def test_rule_copies_into_tax_year(self):
+        cfg = self.cfg('[[regel]]\nziel = "Versicherung"\nalle = ["R\\\\+V", "Beitragsrechnung"]\n'
+                       'kopie = "Steuer/{jahr}"\n')
+        f = self.put("in/a.txt", f"{RV} vom 05.01.2026")
+        r = sort.decide(f, self.root, cfg, None, "deu", TODAY)
+        self.assertEqual((r["ziel"], r["kopien"]), ("Versicherung", ["Steuer/2026"]))
+
+    def test_kopie_jahr_pattern(self):
+        cfg = self.cfg('[[regel]]\nziel = "Versicherung"\nmuster = "Beitragsrechnung"\n'
+                       'kopie = ["Steuer/{jahr}"]\nkopie_jahr = "Beitragsjahr (\\\\d{4})"\n')
+        r = sort.decide(self.put("in/a.txt", f"{RV} Beitragsjahr 2025 vom 05.01.2026"),
+                        self.root, cfg, None, "deu", TODAY)
+        self.assertEqual(r["kopien"], ["Steuer/2025"])
+        r = sort.decide(self.put("in/b.txt", f"{RV} vom 05.01.2026"), self.root, cfg, None, "deu", TODAY)
+        self.assertEqual((r["ziel"], r["grund"]), (None, "kein Jahr erkannt für Kopie nach Steuer/{jahr}"))
+
+    def test_copy_config_errors(self):
+        with self.assertRaises(SystemExit) as e:
+            self.cfg('[[regel]]\nziel = "Versicherung"\nmuster = "x"\nkopie = "Fehlt/{jahr}"\n'
+                     'kopie_jahr = "ohne Gruppe"\n')
+        self.assertIn("Ordner fehlt: Fehlt", str(e.exception))
+        self.assertIn("braucht eine Gruppe", str(e.exception))
+
+    def test_copy_safely_keeps_original(self):
+        a = self.put("Versicherung/a.txt", "inhalt")
+        dst = self.root / "Steuer/a.txt"
+        sort.copy_safely(a, dst)
+        self.assertEqual((a.read_text(), dst.read_text()), ("inhalt", "inhalt"))
+        with self.assertRaises(FileExistsError):
+            sort.copy_safely(a, dst)
+
+
 class Classify(Tmp):
     def setUp(self):
         super().setUp()

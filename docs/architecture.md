@@ -56,6 +56,10 @@ Targets are reserved during planning so parallel jobs never collide
 4. Move: same file system → rename; else copy, fsync, compare SHA-256, then
    delete the original. Never overwrite (`name_2.pdf`). Same content already in
    the target folder → `_Prüfen` ("schon abgelegt").
+5. Copies: a rule may add `kopie` folders (e.g. the tax year). Copied after the
+   move with the same SHA-256 check; same content already there → skipped. Year
+   from `kopie_jahr`, else the newest date. A failed copy is an error, the filed
+   original stays.
 
 `--eval` sorts a sample of the archive as if it were new (leave-one-out) and
 shows coverage and accuracy per threshold, year accuracy and the most frequent
@@ -100,6 +104,9 @@ retried. Reports and the checksum baseline live in `/report`, outside the archiv
 13. Files keep their names; only collisions get `_2`. (Markus: no naming scheme.)
 14. Rules live with the inbox (`00_Eingang/.ordnig/regeln.toml`), the text cache in
     `/report/cache/` (preview writes nothing to the archive).
+15. Copies only through rules: which letters matter for taxes is a decision,
+    not something similarity can learn. Real copies, no hard links (the shares
+    are separate file systems).
 
 ## Quality gates
 

@@ -14,6 +14,8 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   Unsure, unreadable or duplicate files go to `00_Eingang/_Prüfen/` with the
   reason and a suggestion. Preview unless `--apply`; `--eval` measures accuracy
   on the archive itself.
+- Rules can also copy a file, e.g. dividends or annual insurance bills into the
+  tax folder: `kopie = "…/0_Steuer/{jahr}"`, optional `kopie_jahr` pattern.
 
 ### Changed
 

@@ -49,6 +49,7 @@ the archive itself (every folder is a class, year folders become `{jahr}`) and
 follows your rules in `00_Eingang/.ordnig/regeln.toml` first
 ([example](docs/regeln.example.toml)). Anything it is unsure about goes to
 `00_Eingang/_Prüfen/` with a suggestion in the report.
+Rules can also file a copy elsewhere, e.g. into the tax year.
 
 ```sh
 docker run … ghcr.io/tiliavir/ordnig sort --eval    # how well would it sort? (uses the archive only)

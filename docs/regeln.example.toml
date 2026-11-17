@@ -16,6 +16,14 @@ aehnlichkeit = 0.2 # minimum similarity of the closest document (0–1)
 # First matching rule wins. Patterns are regular expressions, case-insensitive,
 # matched against the file name and the text.
 #   muster: one of them must match · alle: all must match · nicht: none may match
+#   kopie: also copy the file there (e.g. for taxes) · kopie_jahr: year pattern for kopie
+#          (default: newest date in the text, not the [jahr] pattern of that folder)
+[[regel]]
+name = "Dividende"
+ziel = "20_Finanzen/Bank/{jahr}"
+alle = ['Beispielbank AG', 'Dividend|Ausschüttung']
+kopie = "20_Finanzen/0_Steuer/{jahr}"
+
 [[regel]]
 name = "Lohnabrechnung"
 ziel = "41_Arbeit/Arbeitgeber/Lohnabrechnung"

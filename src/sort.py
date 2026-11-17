@@ -9,6 +9,7 @@ Für jede Datei im Eingang (Standard: <ablage>/00_Eingang):
      Gelernt wird aus der Ablage selbst: jeder Ordner ist eine Klasse, Jahresordner
      (2019, 2020 …) werden zu {jahr}; das Jahr kommt aus dem jüngsten Datum im Dokument.
   4. Unsicher, unlesbar, ohne Datum für {jahr} oder schon abgelegt: <eingang>/_Prüfen/.
+  Regeln können zusätzlich Kopien anlegen (kopie = "…/0_Steuer/{jahr}"), z. B. für die Steuer.
 
 Ohne --apply nur Vorschau. --eval misst an der Ablage selbst, wie gut das klappt.
 Dateien werden verschoben, nie überschrieben oder gelöscht; über Laufwerksgrenzen
@@ -100,7 +101,7 @@ def load_config(path: Path, root: Path):
         regeln = []
     for i, r in enumerate(regeln, 1):
         where = f"regel {i}" + (f" ({r['name']})" if isinstance(r.get("name"), str) else "")
-        unknown = set(r) - {"name", "ziel", "muster", "alle", "nicht", "jahr"}
+        unknown = set(r) - {"name", "ziel", "muster", "alle", "nicht", "jahr", "kopie", "kopie_jahr"}
         if unknown:
             errors.append(f"{where}: unbekannte Schlüssel: {', '.join(sorted(unknown))}")
         ziel = r.get("ziel")
@@ -120,6 +121,18 @@ def load_config(path: Path, root: Path):
             if JAHR not in rule["ziel"]:
                 errors.append(f"{where}: jahr gesetzt, aber ziel enthält kein {JAHR}")
             rule["jahr"] = _compile(r["jahr"], f"{where}.jahr", errors, need_group=True)
+        kopie = r.get("kopie", [])
+        kopie = [kopie] if isinstance(kopie, str) else kopie
+        if not (isinstance(kopie, list) and all(isinstance(k, str) and k.strip("/") for k in kopie)):
+            errors.append(f"{where}: kopie muss Ordner oder Liste von Ordnern sein"); kopie = []
+        for k in kopie:
+            errors += _check_target(root, k, f"{where}.kopie")
+        rule["kopie"] = [k.strip("/") for k in kopie if k.strip("/") != rule["ziel"]]
+        rule["kopie_jahr"] = None
+        if "kopie_jahr" in r:
+            if not any(JAHR in k for k in rule["kopie"]):
+                errors.append(f"{where}: kopie_jahr gesetzt, aber keine kopie mit {JAHR}")
+            rule["kopie_jahr"] = _compile(r["kopie_jahr"], f"{where}.kopie_jahr", errors, need_group=True)
         cfg["regeln"].append(rule)
     if errors:
         raise SystemExit(f"{path}:\n  " + "\n  ".join(errors))
@@ -462,8 +475,8 @@ def match_rule(rules, text):
     return None
 
 def decide(path: Path, root: Path, cfg, index, lang, today):
-    """-> dict(ziel=relativer Zielordner oder None, quelle, grund, vorschlag)."""
-    res = {"ziel": None, "quelle": "", "grund": "", "vorschlag": ""}
+    """-> dict(ziel=relativer Zielordner oder None, kopien=[Ordner], quelle, grund, vorschlag)."""
+    res = {"ziel": None, "kopien": [], "quelle": "", "grund": "", "vorschlag": ""}
     try:
         text = path.name + " " + extract(path, lang)
     except (Unlesbar, OSError, subprocess.TimeoutExpired, ValueError) as e:
@@ -493,6 +506,17 @@ def decide(path: Path, root: Path, cfg, index, lang, today):
             res["grund"] = f"kein Jahr erkannt für {label}"; res["vorschlag"] = res["vorschlag"] or label
             return res
         label = label.replace(JAHR, str(y))
+    if rule:
+        # Kopien: Jahr aus kopie_jahr, sonst jüngstes Datum (nicht das [jahr]-Muster des Ordners:
+        # das beschreibt Briefe *in* diesem Ordner, nicht die kopierten)
+        for k in rule["kopie"]:
+            if JAHR in k:
+                y = year_of(text, today, rule["kopie_jahr"])
+                if y is None:
+                    res["grund"] = f"kein Jahr erkannt für Kopie nach {k}"; res["vorschlag"] = label
+                    return res
+                k = k.replace(JAHR, str(y))
+            res["kopien"].append(k)
     res["ziel"] = label
     return res
 
@@ -525,12 +549,10 @@ def same_file_in(folder: Path, src: Path):
                 return f
     return None
 
-def move_safely(src: Path, dst: Path):
-    """Verschiebt ohne Datenverlust: gleiches Laufwerk umbenennen, sonst kopieren + prüfen + löschen."""
+def copy_safely(src: Path, dst: Path):
+    """Kopiert über eine Zwischendatei, prüft per SHA-256 und überschreibt nie."""
     if dst.exists():
         raise FileExistsError(dst)
-    if src.stat().st_dev == dst.parent.stat().st_dev:
-        os.rename(src, dst); return
     tmp = dst.with_name(f".{dst.name}.ordnig-tmp")
     shutil.copy2(src, tmp)
     with open(tmp, "rb") as f:
@@ -541,6 +563,14 @@ def move_safely(src: Path, dst: Path):
     if dst.exists():
         tmp.unlink(); raise FileExistsError(dst)
     os.rename(tmp, dst)
+
+def move_safely(src: Path, dst: Path):
+    """Verschiebt ohne Datenverlust: gleiches Laufwerk umbenennen, sonst kopieren + prüfen + löschen."""
+    if dst.exists():
+        raise FileExistsError(dst)
+    if src.stat().st_dev == dst.parent.stat().st_dev:
+        os.rename(src, dst); return
+    copy_safely(src, dst)
     src.unlink()
 
 
@@ -640,17 +670,26 @@ def main():
             folder = root / r["ziel"]
             dup = same_file_in(folder, f)
             if dup:
-                r.update(ziel=None, grund=f"schon abgelegt: {dup.relative_to(root)}")
+                r.update(ziel=None, kopien=[], grund=f"schon abgelegt: {dup.relative_to(root)}")
         results.append(r)
     migrate.progress_done()
 
     reserved = set()
     for r in results:
         f = r["datei"]
+        r["kopien_nach"], copies = [], []
         if r["ziel"]:
             dst = free_name(root / r["ziel"], f.name, reserved)
             r["nach"] = str(dst.relative_to(root))
             status = "abgelegt"
+            for k in r["kopien"]:
+                there = same_file_in(root / k, f)
+                if there:
+                    r["kopien_nach"].append(f"{there.relative_to(root)} (schon vorhanden)")
+                    continue
+                cdst = free_name(root / k, f.name, reserved)
+                copies.append(cdst)
+                r["kopien_nach"].append(str(cdst.relative_to(root)))
         else:
             dst = free_name(eingang / REVIEW, f.name, reserved)
             r["nach"] = f"{REVIEW}/{dst.name}"
@@ -661,20 +700,31 @@ def main():
                 move_safely(f, dst)
             except OSError as e:
                 status, r["grund"] = "fehler", f"{type(e).__name__}: {e}"
+            else:
+                for cdst in copies:          # Original liegt sicher; eine fehlende Kopie ist ein Fehler für sich
+                    try:
+                        cdst.parent.mkdir(exist_ok=True)
+                        copy_safely(dst, cdst)
+                    except OSError as e:
+                        r["grund"] += f"Kopie fehlt ({cdst.relative_to(root)}): {type(e).__name__}: {e}; "
+                        counts["fehler"] += 1
         r["status"] = status
         counts[status] += 1
+        if status == "abgelegt" and copies:
+            counts["kopiert"] += 1
 
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         with open(args.report.with_suffix(".csv"), "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
-            w.writerow(["datei", "status", "nach", "quelle", "grund", "vorschlag", "zeit"])
+            w.writerow(["datei", "status", "nach", "kopien", "quelle", "grund", "vorschlag", "zeit"])
             for r in results:
-                w.writerow([r["datei"].name, r["status"], r["nach"], r["quelle"], r["grund"], r["vorschlag"], stamp])
+                w.writerow([r["datei"].name, r["status"], r["nach"], " | ".join(r["kopien_nach"]),
+                            r["quelle"], r["grund"], r["vorschlag"], stamp])
     verb = "abgelegt" if args.apply else "würde abgelegt"
     table = [("Im Eingang", len(files)), (f"  {verb}", counts["abgelegt"]),
-             (f"  nach {REVIEW}", counts["prüfen"])] + ([("  Fehler", counts["fehler"])] if counts["fehler"] else []) + \
+             ("    davon zusätzlich kopiert", counts["kopiert"]), (f"  nach {REVIEW}", counts["prüfen"])] + ([("  Fehler", counts["fehler"])] if counts["fehler"] else []) + \
             [None] + learned
     notes = [cfg_note, "" if args.apply else "Vorschau – nichts verschoben. Ablegen: ordnig sort --apply"]
     write_sort_report(args.report, root, eingang, results, table, notes, args.apply)
@@ -690,7 +740,11 @@ def write_sort_report(path, root, eingang, results, table, notes, applied):
     tree = {}
     for r in results:
         if r["status"] == "abgelegt":
-            tree[r["nach"]] = f"{'✓' if applied else '→'} aus dem Eingang ({r['quelle']})"
+            tree[r["nach"]] = f"{'✓' if applied else '→'} aus dem Eingang ({r['quelle']})" + \
+                (f" ✗ {r['grund']}" if r["grund"] else "")
+            for k in r["kopien_nach"]:
+                if not k.endswith("(schon vorhanden)"):
+                    tree[k] = f"{'✓' if applied else '→'} Kopie von {r['nach']}"
         else:
             mark = "✗" if r["status"] == "fehler" else "⊘"
             key = r["datei"].name if r["status"] == "fehler" else r["nach"]
