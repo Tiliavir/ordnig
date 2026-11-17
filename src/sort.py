@@ -12,6 +12,9 @@ Für jede Datei im Eingang (Standard: <ablage>/00_Eingang):
   Regeln können zusätzlich Kopien anlegen (kopie = "…/0_Steuer/{jahr}"), z. B. für die Steuer.
 
 Ohne --apply nur Vorschau. --eval misst an der Ablage selbst, wie gut das klappt.
+Alles, was zwischen Läufen bleibt, liegt in <eingang>/.ordnig/ (der Container kann auf
+jedem Rechner laufen): regeln.toml, texte.json.gz (gelesene Texte der Ablage = das Gelernte),
+protokoll.csv (jede Ablage mit --apply).
 Dateien werden verschoben, nie überschrieben oder gelöscht; über Laufwerksgrenzen
 erst kopiert und per SHA-256 verglichen, dann das Original entfernt.
 
@@ -614,17 +617,16 @@ def main():
     ap.add_argument("--stichprobe", type=int, default=2000, help="Dokumente für --eval (Standard 2000)")
     ap.add_argument("--lang", default=migrate.DEFAULT_LANG, help="Tesseract-Sprachen (Standard deu+eng)")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1, help="parallele Leser")
-    ap.add_argument("--cache", type=Path, default=None, help="Textcache der Ablage (.json.gz)")
     ap.add_argument("--report", type=Path, default=None, help="Bericht als Markdown schreiben")
     args = ap.parse_args()
     root = args.root.resolve()
     eingang = (args.eingang or root / "00_Eingang").resolve()
     if not root.is_dir():
         sys.exit(f"Ablage fehlt: {root}")
-    if not args.eval and not eingang.is_dir():
+    if not eingang.is_dir():
         sys.exit(f"Eingang fehlt: {eingang} (--eingang /pfad)")
-    if args.apply and not os.access(eingang, os.W_OK):
-        sys.exit(f"Eingang ist schreibgeschützt: {eingang}")
+    if not os.access(eingang, os.W_OK):
+        sys.exit(f"Eingang ist schreibgeschützt: {eingang} (dort liegt .ordnig/ mit dem Gelernten)")
     missing = [t for t in ("gs", "tesseract", "soffice") if not shutil.which(t)]
     if missing:
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
@@ -634,7 +636,7 @@ def main():
     t0 = time.monotonic()
 
     migrate.progress("Lese Ablage …")
-    docs, n_groups = learn(root, eingang, cfg, args.cache, args.lang, args.jobs)
+    docs, n_groups = learn(root, eingang, cfg, eingang / STATE / "texte.json.gz", args.lang, args.jobs)
     index = Index(docs) if docs else None
     labels = Counter(d["label"] for d in docs)
     learned = [("Beispiele aus der Ablage", len(docs)), ("Ordner (Klassen)", len(labels)),
@@ -714,6 +716,8 @@ def main():
             counts["kopiert"] += 1
 
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    if args.apply:
+        append_log(eingang / STATE / "protokoll.csv", results, stamp)
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         with open(args.report.with_suffix(".csv"), "w", newline="", encoding="utf-8") as fh:
@@ -732,6 +736,20 @@ def main():
                           notes + [f"Details: {args.report}" if args.report else ""])
     if counts["fehler"]:
         sys.exit(1)
+
+LOG_HEADER = ["zeit", "datei", "status", "nach", "kopien", "quelle", "grund"]
+
+def append_log(path: Path, results, stamp):
+    """Dauerhaftes Protokoll im Eingang: was wohin abgelegt wurde (auch zum Rückgängigmachen)."""
+    path.parent.mkdir(exist_ok=True)
+    new = not path.exists()
+    with open(path, "a", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        if new:
+            w.writerow(LOG_HEADER)
+        for r in results:
+            w.writerow([stamp, r["datei"].name, r["status"], r["nach"], " | ".join(r["kopien_nach"]),
+                        r["quelle"], r["grund"]])
 
 def write_sort_report(path, root, eingang, results, table, notes, applied):
     if not path:

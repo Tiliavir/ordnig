@@ -79,7 +79,7 @@ case $cmd in
     ;;
   sort)
     need_dirs
-    "${PY[@]}" "$LIB/sort.py" "$SRC" --cache "$OUT/cache/sort-texte.json.gz" --report "$OUT/$STAMP-sort.md" "$@"
+    "${PY[@]}" "$LIB/sort.py" "$SRC" --report "$OUT/$STAMP-sort.md" "$@"
     ;;
   version|--version)
     if [[ -f $LIB/versions.txt ]]; then cat "$LIB/versions.txt"; else echo "versions.txt missing (not running in the image)"; fi ;;

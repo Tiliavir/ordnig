@@ -104,6 +104,9 @@ for f in Versicherung/beitrag.pdf Steuer/2026/beitrag.pdf Bank/2026/auszug.pdf B
   [[ -s $S/$f ]] || { cat "$W/sort.txt" "$ORDNIG_OUT"/*-sort.csv; fail "sort: missing $f"; }
 done
 [[ -z $(find "$S/00_Eingang" -maxdepth 1 -type f) ]] || fail "sort left files in the inbox"
+for f in texte.json.gz protokoll.csv; do
+  [[ -s $S/00_Eingang/.ordnig/$f ]] || fail "sort: missing 00_Eingang/.ordnig/$f"
+done
 ORDNIG_SRC=$S ordnig sort --eval | grep -q 'Jahr richtig' || fail "sort --eval"
 
 echo "--- migration log (newest row per target)"

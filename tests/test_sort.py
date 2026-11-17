@@ -172,6 +172,16 @@ class Move(Tmp):
         with self.assertRaises(FileExistsError):
             sort.move_safely(self.put("in/b.txt"), self.root / "out/a.txt")
 
+    def test_log_appends_with_header_once(self):
+        log = self.root / ".ordnig/protokoll.csv"
+        r = {"datei": Path("a.pdf"), "status": "abgelegt", "nach": "Bank/2026/a.pdf",
+             "kopien_nach": ["Steuer/2026/a.pdf"], "quelle": "Regel DKB", "grund": ""}
+        sort.append_log(log, [r], "2026-11-17 08:00:00")
+        sort.append_log(log, [r], "2026-11-18 08:00:00")
+        lines = log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(lines[0], ",".join(sort.LOG_HEADER))
+        self.assertEqual(len(lines), 3)
+
     def test_duplicate_detected_by_content(self):
         self.put("out/x.pdf", "same"); src = self.put("in/y.pdf", "same")
         self.assertEqual(sort.same_file_in(self.root / "out", src).name, "x.pdf")

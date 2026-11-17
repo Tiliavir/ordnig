@@ -16,6 +16,8 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   on the archive itself.
 - Rules can also copy a file, e.g. dividends or annual insurance bills into the
   tax folder: `kopie = "…/0_Steuer/{jahr}"`, optional `kopie_jahr` pattern.
+- All sort state lives in `00_Eingang/.ordnig/` (rules, learned texts, history
+  `protokoll.csv`), so the container can run on any machine.
 
 ### Changed
 

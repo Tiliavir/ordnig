@@ -44,7 +44,7 @@ Targets are reserved during planning so parallel jobs never collide
 1. Learn: walk the archive (without the inbox, `ignorieren` folders, `#recycle`,
    `@eaDir`, `OneNote_RecycleBin`). One example per document: ordnig's PDF/A copy
    first (it has the OCR text), else the original. No OCR here; scans count only
-   after `ordnig run`. Texts are cached in `/report/cache/` by size and mtime.
+   after `ordnig run`. Texts are cached in `00_Eingang/.ordnig/texte.json.gz` by size and mtime.
    Label = folder; year folders (`2019`) become `{jahr}`.
 2. Read each inbox file: PDF text via Ghostscript (first 3 pages), OCR with
    Tesseract if there is none; images OCR; ODF/OOXML from their XML; legacy
@@ -102,8 +102,11 @@ retried. Reports and the checksum baseline live in `/report`, outside the archiv
     reason; nothing is guessed. Wrong config (unknown keys, bad patterns,
     missing folders) stops the run with all errors listed.
 13. Files keep their names; only collisions get `_2`. (Markus: no naming scheme.)
-14. Rules live with the inbox (`00_Eingang/.ordnig/regeln.toml`), the text cache in
-    `/report/cache/` (preview writes nothing to the archive).
+14. Everything that must survive a run lives in `00_Eingang/.ordnig/`: rules
+    (`regeln.toml`), what was learned (`texte.json.gz`) and the history of every
+    `--apply` (`protokoll.csv`). Markus runs the container on his PC, not on the
+    NAS, so nothing may depend on the container or `/report`. (stated) Preview
+    writes the cache there too, nothing else.
 15. Copies only through rules: which letters matter for taxes is a decision,
     not something similarity can learn. Real copies, no hard links (the shares
     are separate file systems).
