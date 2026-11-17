@@ -1,6 +1,7 @@
 # Both stages pinned to the same digest; Dependabot proposes updates for both.
 
-# --- veraPDF and a minimal Java runtime; curl, unzip and the JDK stay here.
+# --- veraPDF and a minimal Java runtime; curl, unzip, JDK and binutils (objcopy
+#     for jlink --strip-debug) stay here.
 FROM ubuntu:25.10@sha256:7cc5e35f6567ee8c66d2abb4aab0fd866669e6207c237c3a8f0947a5c7f17092 AS java
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -8,7 +9,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG VERAPDF_URL=https://software.verapdf.org/releases/verapdf-installer.zip
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl unzip default-jdk-headless \
+      ca-certificates curl unzip default-jdk-headless binutils \
  && rm -rf /var/lib/apt/lists/*
 
 COPY docker/verapdf-auto-install.xml /tmp/auto-install.xml
