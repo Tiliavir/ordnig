@@ -4,6 +4,14 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
+## [Unreleased]
+
+### Changed
+
+- Smaller image: veraPDF runs on a minimal Java runtime (`jlink`) instead of
+  the full JRE; `unpaper`, `pngquant` (with ffmpeg libraries), the veraPDF GUI,
+  `curl` and `unzip` are gone. `ordnig version` also shows the Java version.
+
 ## [0.6.0] - 2026-11-14
 
 ### Changed

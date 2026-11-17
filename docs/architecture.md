@@ -51,9 +51,12 @@ retried. Reports and the checksum baseline live in `/report`, outside the archiv
 3. `preview` is the default; changes need the explicit `run`.
 4. Images are opt-in (`--images`): photos should not become PDFs, scans should.
 5. Existing PDFs get `_pdfa` as suffix instead of replacing them.
-6. Ubuntu 24.04 packages instead of pinned pip versions (fewer moving parts).
+6. Ubuntu packages instead of pinned pip versions (fewer moving parts).
    Base image pinned by digest (Dependabot), `apt-get upgrade` at build for
-   security fixes. veraPDF only offers a "latest" installer: each build records
+   security fixes. Only what ordnig calls is installed: no `unpaper`/`pngquant`
+   (OCRmyPDF needs them only for `--clean`/`--optimize 2`), and veraPDF runs on
+   a `jlink` runtime with the modules of veraPDF's own image instead of the
+   full JRE; installer, JDK, curl and unzip stay in a build stage. veraPDF only offers a "latest" installer: each build records
    all tool versions (`ordnig version`), and the smoke test on amd64 and arm64
    guards every build.
 7. Release process as in Allmend: newest `CHANGELOG.md` version without a tag
