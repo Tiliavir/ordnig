@@ -43,8 +43,8 @@ RUN apt-get update && apt-get -y upgrade && apt-get install -y --no-install-reco
 ENV JAVA_HOME=/opt/java
 COPY --from=java /opt/java /opt/java
 COPY --from=java /opt/verapdf /opt/verapdf
-# Fail the build if the Java runtime misses a system library (X11 and sound are unused).
-RUN missing=$(find /opt/java/lib -name '*.so' ! -name libawt_xawt.so ! -name libjsound.so \
+# Fail the build if the Java runtime misses a system library (X11, JAWT and sound are unused).
+RUN missing=$(find /opt/java/lib -name '*.so' ! -name libawt_xawt.so ! -name libjawt.so ! -name libjsound.so \
       -exec env LD_LIBRARY_PATH=/opt/java/lib/server ldd {} + | grep 'not found' | sort -u) \
  && { [ -z "$missing" ] || { echo "$missing"; exit 1; }; } \
  && printf '#!/bin/sh\nexec /opt/verapdf/verapdf "$@"\n' > /usr/local/bin/verapdf \
