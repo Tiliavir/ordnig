@@ -54,6 +54,13 @@ jobs:
             --entrypoint bash ordnig:test /tests/smoke.sh | tee smoke.log
           { echo "### $(docker run --rm ordnig:test version | head -1)"; echo '```';
             docker run --rm ordnig:test version; tail -20 smoke.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Image size
+        if: matrix.arch == 'amd64'
+        run: |
+          size() { docker image inspect -f '{{.Size}}' "$1" | awk '{printf "%.0f MB", $1 / 1e6}'; }
+          old=n/a
+          if docker pull -q ghcr.io/tiliavir/ordnig:latest > /dev/null; then old=$(size ghcr.io/tiliavir/ordnig:latest); fi
+          echo "Image size: $(size ordnig:test) (latest release: $old)" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Vulnerability scan
         if: matrix.arch == 'amd64'
         run: |
