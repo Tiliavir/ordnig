@@ -22,6 +22,9 @@ import argparse, csv, re, hashlib, os, shutil, subprocess, sys, time, unicodedat
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+import importlib.util
+_spec = importlib.util.spec_from_file_location("state", Path(__file__).resolve().parent / "state.py")
+state = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(state)
 
 # ---------------------------------------------------------------- Formatbewertung
 # ok      = offen/weit verbreitet, archivtauglich
@@ -531,8 +534,9 @@ def main():
               f"- Fehlt: {len(vstat['gone'])}"] + [f"  - `{p}`" for p in vstat["gone"][:200]]
     (args.out / "report.md").write_text("\n".join(L) + "\n", encoding="utf-8", errors="replace")
 
+    code = state.FEHLER if vstat and (vstat["changed"] or vstat["gone"]) else state.OK
     if args.quiet:
-        return
+        return code
     t = [("Dateien gesamt", num(len(rows)), hs(total))]
     t += [(f"  {labels[k][2:]}", num(risk_cnt[k]), hs(risk_size[k])) for k in ("ok", "done", "watch", "risk", "unknown", "?") if risk_cnt[k]]
     t += [None, ("Dateien mit Befunden", num(with_issues), "")]
@@ -545,6 +549,7 @@ def main():
         t += [None, ("Seit letzter Prüfung geändert", num(vstat["changed"]), ""), ("  fehlt", num(len(vstat["gone"])), ""),
               ("  verschoben", num(vstat["moved"]), ""), ("  neu", num(vstat["new"]), "")]
     console_table(args.title, t, [f"Details: {args.out / 'report.md'}"])
+    return code
 
 if __name__ == "__main__":
-    main()
+    state.run(main)

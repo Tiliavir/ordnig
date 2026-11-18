@@ -33,6 +33,9 @@ import argparse, csv, os, re, shutil, subprocess, sys, tempfile, time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from collections import Counter, defaultdict
 from pathlib import Path
+import importlib.util
+_spec = importlib.util.spec_from_file_location("state", Path(__file__).resolve().parent / "state.py")
+state = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(state)
 
 TEXT = {"doc", "docx", "docm", "dot", "dotx", "rtf", "wpd", "wp", "wps", "wri", "lwp", "sxw", "sdw",
         "pages", "txt"}
@@ -512,7 +515,7 @@ def main():
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
 
     t_start = time.monotonic()
-    args.log.parent.mkdir(parents=True, exist_ok=True)
+    state.open_state(args.log.parent)
     if args.log.exists():
         upgrade_log(args.log)
     new_log = not args.log.exists()
@@ -587,6 +590,7 @@ def main():
            [f"| {d:.1f} | `{p}` |" for d, p in durations[:15]] if durations else []
     write_report(args.report, "Migration", root, render_tree(root.name, notes), table, foot, slow)
     console_table("Migration", table, [foot[0], f"Details: {args.report}" if args.report else foot[1]])
+    return state.FEHLER if c["fail"] else state.OK
 
 if __name__ == "__main__":
-    main()
+    state.run(main)

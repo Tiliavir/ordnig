@@ -14,7 +14,9 @@ Für jede Datei im Eingang (Standard: <ablage>/00_Eingang):
 Ohne --apply nur Vorschau. --eval misst an der Ablage selbst, wie gut das klappt.
 Alles, was zwischen Läufen bleibt, liegt in <eingang>/.ordnig/ (der Container kann auf
 jedem Rechner laufen): regeln.toml, texte.json.gz (gelesene Texte der Ablage = das Gelernte),
-protokoll.csv (jede Ablage mit --apply).
+protokoll.csv (jede Ablage mit --apply), version.json (Formatversion) und lock (nur ein Lauf
+zur Zeit). Ist eine Freigabe nicht gemountet, bricht sort ab, statt das Gelernte zu verwerfen.
+Exit-Codes: siehe state.py (0 ok, 1 Dateifehler, 2 Aufruf/Umgebung, 3 gesperrt, 4 _Prüfen nicht leer).
 Dateien werden verschoben, nie überschrieben oder gelöscht; über Laufwerksgrenzen
 erst kopiert und per SHA-256 verglichen, dann das Original entfernt.
 
@@ -31,8 +33,11 @@ from datetime import date
 from email import policy
 from pathlib import Path
 
-_spec = importlib.util.spec_from_file_location("migrate", Path(__file__).resolve().parent / "migrate.py")
-migrate = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(migrate)
+def _load(name):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    return mod
+migrate, state = _load("migrate"), _load("state")
 
 REVIEW = "_Prüfen"
 STATE = ".ordnig"
@@ -44,6 +49,8 @@ MAX_CHARS = 8000         # pro Dokument gelesen und gespeichert (Briefkopf, Betr
 PAGES = 3                # aus PDFs gelesene Seiten
 TOP_TERMS = 60           # stärkste Begriffe je Dokument im Index
 DEFAULTS = {"k": 7, "anteil": 0.7, "aehnlichkeit": 0.2}
+SHRINK_MIN = 20          # Mount-Schutz: ab so vielen bekannten Dokumenten je Bereich …
+SHRINK_KEEP = 0.5        # … muss mindestens dieser Anteil noch da sein
 
 IMAGES = {"jpg", "jpeg", "png", "tif", "tiff", "bmp", "gif", "webp", "jp2", "pnm"}
 PLAIN = {"txt", "md", "csv", "tsv", "xml", "json"}
@@ -371,7 +378,7 @@ def _extract_group(args):
             break
     return out
 
-def learn(root: Path, eingang: Path, cfg, cache_path: Path, lang: str, jobs: int):
+def learn(root: Path, eingang: Path, cfg, cache_path: Path, lang: str, jobs: int, changed_ok=False):
     """Liest die Ablage (mit Cache) -> (Dokumente [{rel, label, text}], Anzahl Dokumente)."""
     cache = {}
     if cache_path and cache_path.exists():
@@ -389,6 +396,8 @@ def learn(root: Path, eingang: Path, cfg, cache_path: Path, lang: str, jobs: int
             cands.append((f"{rel_dir}/{n}", f"{st.st_size}:{st.st_mtime_ns}"))
         if cands:
             plan.append((rel_dir, cands))
+    if not changed_ok:
+        check_shrink(root, cache, [rel for _, cands in plan for rel, _ in cands])
 
     def known(cands):
         """Text aus dem Cache, falls die Reihenfolge ohne neues Lesen entscheidbar ist."""
@@ -426,6 +435,33 @@ def learn(root: Path, eingang: Path, cfg, cache_path: Path, lang: str, jobs: int
             json.dump(new_cache, f, ensure_ascii=False)
         tmp.replace(cache_path)
     return docs, len(groups)
+
+
+def check_mounts(root: Path):
+    """Ein leerer Mountpunkt ist fast immer eine Freigabe, die auf dem Rechner nicht gemountet war
+    (docker -v legt dann einen leeren Ordner an)."""
+    for d in [root] + sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
+        if os.path.ismount(d) and not any(d.iterdir()):
+            sys.exit(f"{d} ist leer – ist die Freigabe auf dem Rechner gemountet?")
+
+def check_shrink(root: Path, cache, current):
+    """Vergleicht mit dem letzten Lauf: fehlt in der Ablage oder einer gemounteten Freigabe mehr als
+    die Hälfte der bekannten Dokumente, ist eher etwas nicht gemountet, als dass so viel gelöscht wurde.
+    Ohne diesen Abbruch würde der Cache das Gelernte (stundenlanges Lesen/OCR) verwerfen."""
+    mounts = {}
+    def area(rel):
+        top = rel.split("/", 1)[0]
+        if top not in mounts:
+            mounts[top] = top if os.path.ismount(root / top) else ""
+        return mounts[top]
+    before, now = Counter(map(area, cache)), Counter(map(area, current))
+    before[""], now[""] = len(cache), len(current)
+    for a in sorted(before):
+        before_n, now_n = before[a], now[a]
+        if before_n >= SHRINK_MIN and now_n < before_n * SHRINK_KEEP:
+            where = f"in {root / a}" if a else "in der Ablage"
+            sys.exit(f"{where} sind nur noch {now_n} von {before_n} bekannten Dokumenten – Freigabe nicht gemountet?\n"
+                     f"Ist das Absicht (Ablage umgebaut), mit --ablage-geaendert neu lernen.")
 
 
 # ----------------------------------------------------------------- Ähnlichkeit (k-nächste Nachbarn)
@@ -618,11 +654,14 @@ def main():
     ap.add_argument("--lang", default=migrate.DEFAULT_LANG, help="Tesseract-Sprachen (Standard deu+eng)")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1, help="parallele Leser")
     ap.add_argument("--report", type=Path, default=None, help="Bericht als Markdown schreiben")
+    ap.add_argument("--ablage-geaendert", action="store_true",
+                    help="viele Dokumente fehlen absichtlich (Ablage umgebaut): trotzdem lernen")
     args = ap.parse_args()
     root = args.root.resolve()
     eingang = (args.eingang or root / "00_Eingang").resolve()
     if not root.is_dir():
         sys.exit(f"Ablage fehlt: {root}")
+    check_mounts(root)
     if not eingang.is_dir():
         sys.exit(f"Eingang fehlt: {eingang} (--eingang /pfad)")
     if not os.access(eingang, os.W_OK):
@@ -630,13 +669,15 @@ def main():
     missing = [t for t in ("gs", "tesseract", "soffice") if not shutil.which(t)]
     if missing:
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
+    state.open_state(eingang / STATE)
     cfg_path = eingang / STATE / "regeln.toml"
     cfg = load_config(cfg_path, root)
     today = date.today()
     t0 = time.monotonic()
 
     migrate.progress("Lese Ablage …")
-    docs, n_groups = learn(root, eingang, cfg, eingang / STATE / "texte.json.gz", args.lang, args.jobs)
+    docs, n_groups = learn(root, eingang, cfg, eingang / STATE / "texte.json.gz", args.lang, args.jobs,
+                       args.ablage_geaendert)
     index = Index(docs) if docs else None
     labels = Counter(d["label"] for d in docs)
     learned = [("Beispiele aus der Ablage", len(docs)), ("Ordner (Klassen)", len(labels)),
@@ -660,7 +701,7 @@ def main():
         notes = [cfg_note, f"Laufzeit {migrate.fmt_dur(time.monotonic() - t0)}"]
         write_eval(args.report, root, table, notes, sec, labels)
         migrate.console_table("Eingang: Bewertung", table, notes + [f"Details: {args.report}" if args.report else ""])
-        return
+        return state.OK
 
     files = inbox_files(eingang)
     results, counts = [], Counter()
@@ -735,7 +776,11 @@ def main():
     migrate.console_table("Eingang" + ("" if args.apply else " (Vorschau)"), table,
                           notes + [f"Details: {args.report}" if args.report else ""])
     if counts["fehler"]:
-        sys.exit(1)
+        return state.FEHLER
+    waiting = len(inbox_files(eingang / REVIEW)) if (eingang / REVIEW).is_dir() else 0
+    if not args.apply:
+        waiting += counts["prüfen"]
+    return state.PRUEFEN if waiting else state.OK
 
 LOG_HEADER = ["zeit", "datei", "status", "nach", "kopien", "quelle", "grund"]
 
@@ -780,4 +825,4 @@ def write_eval(path, root, table, notes, sections, labels):
 
 
 if __name__ == "__main__":
-    main()
+    state.run(main)

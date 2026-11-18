@@ -29,6 +29,11 @@ Options for sort:
   --apply            really move the files (otherwise preview)
   --eval             measure on the archive itself how well sorting works
   --eingang PATH     inbox (default $SRC/00_Eingang); rules in <inbox>/.ordnig/regeln.toml
+  --ablage-geaendert many known documents are gone on purpose (archive reorganised)
+
+Exit codes: 0 done · 1 errors in single files (sort, run) or changed/missing files
+(verify) · 2 wrong call or setup (not mounted, read-only, bad regeln.toml, data from a
+newer version) · 3 another run holds the lock · 4 sort: files wait in _Prüfen
 
 Mounts: archive -> $SRC, reports -> $OUT
 EOF
@@ -64,11 +69,14 @@ case $cmd in
     need_dirs
     [[ -w $SRC ]] || { echo "Archive is read-only – remove :ro for run" >&2; exit 2; }
     check before "Prüfung vorher" --quiet
-    "${PY[@]}" "$LIB/migrate.py" "$SRC" --apply --report "$OUT/$STAMP-migration.md" "$@"
+    rc=0
+    "${PY[@]}" "$LIB/migrate.py" "$SRC" --apply --report "$OUT/$STAMP-migration.md" "$@" || rc=$?
+    (( rc == 1 )) || (( rc == 0 )) || exit "$rc"     # 2/3: nothing was converted
     cp "$SRC/.ordnig/migration_log.csv" "$OUT/$STAMP-migration_log.csv" 2>/dev/null || true
     echo
     check after "Prüfung nachher"
     store_manifest
+    exit "$rc"
     ;;
   check)
     need_dirs; check check "Prüfung" "$@"; [[ -f $OUT/manifest.sha256 ]] || store_manifest ;;
