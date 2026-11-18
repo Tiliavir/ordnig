@@ -16,6 +16,7 @@ ordnig – checks an old file archive and adds archival copies next to the origi
   run [opts]         report, convert, report again, store fresh checksums.
   check              report only.
   verify             compare against the last checksums ($OUT/manifest.sha256).
+  sort [opts]        file the inbox (00_Eingang) into the archive. Preview unless --apply.
   version            versions of ordnig and the bundled tools.
 
 Options for run (passed to the converter):
@@ -23,6 +24,11 @@ Options for run (passed to the converter):
   --lang deu+eng     Tesseract languages (default deu+eng; also: frk, fra, ita)
   --fix-scans        rotate and deskew scans (about 40% more OCR time)
   -j N               files in parallel (default: number of CPUs)
+
+Options for sort:
+  --apply            really move the files (otherwise preview)
+  --eval             measure on the archive itself how well sorting works
+  --eingang PATH     inbox (default $SRC/00_Eingang); rules in <inbox>/.ordnig/regeln.toml
 
 Mounts: archive -> $SRC, reports -> $OUT
 EOF
@@ -70,6 +76,10 @@ case $cmd in
     need_dirs
     [[ -f $OUT/manifest.sha256 ]] || { echo "No $OUT/manifest.sha256 yet – run 'check' or 'run' first" >&2; exit 2; }
     check verify "Bitrot-Prüfung" --verify "$OUT/manifest.sha256"
+    ;;
+  sort)
+    need_dirs
+    "${PY[@]}" "$LIB/sort.py" "$SRC" --report "$OUT/$STAMP-sort.md" "$@"
     ;;
   version|--version)
     if [[ -f $LIB/versions.txt ]]; then cat "$LIB/versions.txt"; else echo "versions.txt missing (not running in the image)"; fi ;;
