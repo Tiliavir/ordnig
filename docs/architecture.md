@@ -14,6 +14,7 @@ an additional file. One container, no setup on the host.
 | `src/check.py` | read-only scan → `report.md`, `files.csv`, `duplicates.csv`, `manifest.sha256`; stdlib only |
 | `src/migrate.py` | plans and runs conversions; preview unless `--apply` |
 | `src/sort.py` | files the inbox into the archive; preview unless `--apply`; stdlib only |
+| `src/state.py` | lock and format version of the `.ordnig` folders, exit codes |
 | LibreOffice (headless) | legacy office → ODF; ODF/office → tagged PDF/A-2 |
 | OCRmyPDF + Tesseract | OCR text layer for pages without text, PDF/A-2 output |
 | veraPDF | validates 2u; decides what gets declared |
@@ -70,6 +71,36 @@ confusions — the basis for choosing thresholds and writing rules.
 `<archive>/.ordnig/migration_log.csv` travels with the archive: generated
 files are not converted again, finished sources are skipped, failed ones are
 retried. Reports and the checksum baseline live in `/report`, outside the archive.
+`sort` keeps its state in `00_Eingang/.ordnig/` (decision 14).
+
+Every `.ordnig` folder that a run writes to has:
+
+- `lock`: a POSIX lock (`lockf`) held for the whole run. A second run on the
+  same folder, also from another machine, stops with exit code 3. The file
+  names the holder (host, PID, start). The kernel releases the lock when the
+  process ends, so a crash leaves nothing to clean up.
+- `version.json`: `{"format": 1, "ordnig": "0.8.0"}`. A newer ordnig lifts an
+  older folder step by step (`state.MIGRATIONS`); an older ordnig refuses a
+  newer folder (exit 2) instead of misreading it.
+
+## Operation
+
+Meant to run unattended (systemd timer, cron). Exit codes:
+
+| Code | Meaning |
+| ---: | --- |
+| 0 | done |
+| 1 | errors in single files (`sort`, `run`), changed or missing files (`verify`), or a crash |
+| 2 | wrong call or setup: archive/inbox missing or not mounted, read-only, tools missing, bad `regeln.toml`, data from a newer version |
+| 3 | another run holds the lock |
+| 4 | `sort`: done, but files wait in `_Prüfen` |
+
+Mount guard (`sort`): an unmounted NAS share shows up as an empty folder,
+because `docker -v` creates the host path. `sort` stops (exit 2) if the archive
+or one of its top-level mount points is empty, or if the archive or a mount
+point holds less than half of the documents the last run knew (at least 20).
+Without it, the cache would drop everything learned from that share. A real
+reorganisation passes with `--ablage-geaendert`.
 
 ## Decisions (Proposed)
 
@@ -111,6 +142,16 @@ retried. Reports and the checksum baseline live in `/report`, outside the archiv
     not something similarity can learn. Real copies, no hard links (the shares
     are separate file systems).
 
+16. Exit codes as the interface for automation: a timer or cron job needs no
+    output parsing, and "files wait in `_Prüfen`" (4) is distinct from errors (1).
+17. One lock per `.ordnig` folder with `lockf`, not `flock`: on NFS and SMB
+    mounts only POSIX locks reach the server, and the container may run on
+    different machines. No stale-lock handling needed.
+18. A format version in every `.ordnig` folder: the state outlives containers
+    and versions (decision 14), so a version change must be detected, not guessed.
+19. The mount guard compares against the cache instead of a marker file: no
+    setup step, and it also catches a share mounted at the wrong path.
+
 ## Quality gates
 
 Unit tests (stdlib `unittest`), shellcheck, smoke test of the real image on
@@ -119,6 +160,8 @@ with these checks green.
 
 ## Known limits
 
+- The lock needs a file system with POSIX locks; across machines that is NFS
+  with lockd or SMB without `nobrl`. ordnig ≤ 0.7 ignores lock and `version.json`.
 - `sort`: `{jahr}` uses the newest date up to today; a tax assessment for 2025
   sent in 2026 needs a `jahr` pattern. HEIC photos and Outlook `.msg` are not read.
 - Handwriting (Kurrent, Sütterlin) is not recognized; Fraktur via `--lang deu+frk`.
