@@ -51,7 +51,7 @@ RUN missing=$(find /opt/java/lib -name '*.so' ! -name libawt_xawt.so ! -name lib
  && chmod +x /usr/local/bin/verapdf \
  && verapdf --version
 
-COPY src/check.py src/migrate.py src/sort.py LICENSE /opt/ordnig/
+COPY src/check.py src/migrate.py src/sort.py src/state.py LICENSE /opt/ordnig/
 COPY src/ordnig /usr/local/bin/ordnig
 RUN chmod +x /usr/local/bin/ordnig \
  && { echo "ordnig:      $ORDNIG_VERSION"; \

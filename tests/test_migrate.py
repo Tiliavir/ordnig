@@ -18,6 +18,13 @@ class Plan(unittest.TestCase):
     def tearDown(self):
         self.dir.cleanup()
 
+    def test_inbox_is_skipped(self):
+        (self.root / "home/00_Eingang").mkdir(parents=True)
+        (self.root / "home/00_Eingang/post.doc").write_text("x")
+        jobs = migrate.plan(self.root, set(), set(), set(), skip=[self.root / "home/00_Eingang"])
+        self.assertFalse(any("00_Eingang" in str(j) for j in jobs))
+        self.assertTrue(any("post.doc" in str(j) for j in migrate.plan(self.root, set(), set(), set())))
+
     def plan(self, images=()):
         jobs = migrate.plan(self.root, set(images), set(), set())
         return {str(j[1].relative_to(self.root)): j for j in jobs}
