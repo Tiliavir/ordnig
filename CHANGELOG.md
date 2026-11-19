@@ -62,6 +62,8 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   `sort` filed it, so original and copies are never filed separately.
 - `sort` finds the inbox the same way, so `--eingang` is only needed when there
   are several.
+- Architecture documented as arc42 in `docs/arc42/` (one file per chapter, one per ADR);
+  replaces `docs/architecture.md`.
 - `run` finishes the check afterwards even when single files failed, then exits 1.
 - Setup errors (missing archive, tools, bad `regeln.toml`) exit with 2 instead of 1.
 
