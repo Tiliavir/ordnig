@@ -70,5 +70,42 @@ class State(unittest.TestCase):
             self.assertEqual(e.exception.code, code)
 
 
+class Location(unittest.TestCase):
+    """One .ordnig folder for everything: in the inbox, also when shares are mounted below /ablage."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); self.root = Path(self.dir.name)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_inbox_in_root_or_one_share_or_none(self):
+        self.assertEqual(state.state_dir(self.root), self.root / ".ordnig")          # no inbox
+        (self.root / "home/00_Eingang").mkdir(parents=True); (self.root / "documents").mkdir()
+        self.assertEqual(state.state_dir(self.root), (self.root / "home/00_Eingang/.ordnig").resolve())
+        (self.root / "00_Eingang").mkdir()
+        self.assertEqual(state.find_inbox(self.root), (self.root / "00_Eingang").resolve())
+        self.assertEqual(state.find_inbox(self.root, self.root / "x"), (self.root / "x").resolve())
+
+    def test_two_shares_with_inbox_need_a_choice(self):
+        for share in ("home", "documents"):
+            (self.root / share / "00_Eingang").mkdir(parents=True)
+        with self.assertRaises(SystemExit) as e:
+            state.find_inbox(self.root)
+        self.assertIn("--eingang", str(e.exception))
+
+    def test_adopt_moves_or_appends_and_keeps_the_original(self):
+        old_dir, new_dir = self.root / ".ordnig", self.root / "00_Eingang/.ordnig"
+        old_dir.mkdir(); new_dir.mkdir(parents=True)
+        (old_dir / "log.csv").write_text("h\nalt\n")
+        state.adopt(self.root, new_dir, "log.csv")
+        self.assertEqual((new_dir / "log.csv").read_text(), "h\nalt\n")
+        self.assertTrue((old_dir / "log.csv.übernommen").exists())
+        self.assertIsNone(state.legacy(self.root, new_dir, "log.csv"))
+        (old_dir / "log.csv").write_text("h\nnoch älter\n")                  # both exist: append rows
+        state.adopt(self.root, new_dir, "log.csv")
+        self.assertEqual((new_dir / "log.csv").read_text(), "h\nalt\nnoch älter\n")
+        state.adopt(self.root, old_dir, "log.csv")                             # same place: nothing to do
+
+
 if __name__ == "__main__":
     unittest.main()

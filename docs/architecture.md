@@ -14,7 +14,7 @@ an additional file. One container, no setup on the host.
 | `src/check.py` | read-only scan → `report.md`, `files.csv`, `duplicates.csv`, `manifest.sha256`; stdlib only |
 | `src/migrate.py` | plans and runs conversions; preview unless `--apply` |
 | `src/sort.py` | files the inbox into the archive; preview unless `--apply`; stdlib only |
-| `src/state.py` | lock and format version of the `.ordnig` folders, exit codes |
+| `src/state.py` | where the `.ordnig` folder is, its lock and format version, exit codes |
 | LibreOffice (headless) | legacy office → ODF; ODF/office → tagged PDF/A-2 |
 | OCRmyPDF + Tesseract | OCR text layer for pages without text, PDF/A-2 output |
 | veraPDF | validates 2u; decides what gets declared |
@@ -68,15 +68,20 @@ confusions — the basis for choosing thresholds and writing rules.
 
 ## State
 
-`<archive>/.ordnig/migration_log.csv` travels with the archive: generated
-files are not converted again, finished sources are skipped, failed ones are
-retried. Reports and the checksum baseline live in `/report`, outside the archive.
-`sort` keeps its state in `00_Eingang/.ordnig/` (decision 14).
+There is one `.ordnig` folder for everything that must survive a run
+(decision 14), in the inbox: `--eingang`, else `<archive>/00_Eingang`, else
+exactly one `<archive>/*/00_Eingang` (shares mounted below `/ablage`). Only an
+archive without inbox keeps it in `<archive>/.ordnig/`. It holds the rules,
+the learned texts and history of `sort`, and `migration_log.csv` of `run`:
+generated files are not converted again, finished sources are skipped, failed
+ones are retried. A log at the old place (`<archive>/.ordnig/`, up to 0.7) is
+read and taken over at the next `run`; the original stays as `….übernommen`.
+Reports and the checksum baseline live in `/report`, outside the archive.
 
-Every `.ordnig` folder that a run writes to has:
+The folder also has:
 
 - `lock`: a POSIX lock (`lockf`) held for the whole run. A second run on the
-  same folder, also from another machine, stops with exit code 3. The file
+  folder (`run` or `sort`), also from another machine, stops with exit code 3. The file
   names the holder (host, PID, start). The kernel releases the lock when the
   process ends, so a crash leaves nothing to clean up.
 - `version.json`: `{"format": 1, "ordnig": "0.8.0"}`. A newer ordnig lifts an
@@ -134,8 +139,10 @@ reorganisation passes with `--ablage-geaendert`.
     missing folders) stops the run with all errors listed.
 13. Files keep their names; only collisions get `_2`. (Markus: no naming scheme.)
 14. Everything that must survive a run lives in `00_Eingang/.ordnig/`: rules
-    (`regeln.toml`), what was learned (`texte.json.gz`) and the history of every
-    `--apply` (`protokoll.csv`). Markus runs the container on his PC, not on the
+    (`regeln.toml`), what was learned (`texte.json.gz`), the history of every
+    `--apply` (`protokoll.csv`) and, since 0.8, the conversion log of `run`
+    (with two shares below `/ablage`, `/ablage/.ordnig` would be inside the
+    container and lost). Markus runs the container on his PC, not on the
     NAS, so nothing may depend on the container or `/report`. (stated) Preview
     writes the cache there too, nothing else.
 15. Copies only through rules: which letters matter for taxes is a decision,
@@ -144,10 +151,10 @@ reorganisation passes with `--ablage-geaendert`.
 
 16. Exit codes as the interface for automation: a timer or cron job needs no
     output parsing, and "files wait in `_Prüfen`" (4) is distinct from errors (1).
-17. One lock per `.ordnig` folder with `lockf`, not `flock`: on NFS and SMB
+17. One lock for the `.ordnig` folder with `lockf`, not `flock`: on NFS and SMB
     mounts only POSIX locks reach the server, and the container may run on
     different machines. No stale-lock handling needed.
-18. A format version in every `.ordnig` folder: the state outlives containers
+18. A format version in the `.ordnig` folder: the state outlives containers
     and versions (decision 14), so a version change must be detected, not guessed.
 19. The mount guard compares against the cache instead of a marker file: no
     setup step, and it also catches a share mounted at the wrong path.

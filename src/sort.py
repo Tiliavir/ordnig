@@ -647,7 +647,8 @@ def evaluate(index, cfg, sample, today, rng):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", type=Path)
-    ap.add_argument("--eingang", type=Path, default=None, help="Eingangsordner (Standard: <ablage>/00_Eingang)")
+    ap.add_argument("--eingang", type=Path, default=None,
+                    help="Eingangsordner (Standard: <ablage>/00_Eingang oder <ablage>/*/00_Eingang)")
     ap.add_argument("--apply", action="store_true", help="wirklich ablegen (sonst Vorschau)")
     ap.add_argument("--eval", action="store_true", help="Treffsicherheit an der Ablage messen")
     ap.add_argument("--stichprobe", type=int, default=2000, help="Dokumente für --eval (Standard 2000)")
@@ -658,7 +659,8 @@ def main():
                     help="viele Dokumente fehlen absichtlich (Ablage umgebaut): trotzdem lernen")
     args = ap.parse_args()
     root = args.root.resolve()
-    eingang = (args.eingang or root / "00_Eingang").resolve()
+    eingang = state.find_inbox(root, args.eingang) if root.is_dir() else None
+    eingang = eingang or root / state.INBOX
     if not root.is_dir():
         sys.exit(f"Ablage fehlt: {root}")
     check_mounts(root)

@@ -72,7 +72,7 @@ script) or a cron job, and read the table it prints (the task can mail it):
 ```
 
 `run` can be interrupted and restarted; it continues where it stopped
-(state in `<archive>/.ordnig/`). More options: `… ordnig help`; tool versions: `… ordnig version`.
+(state in `00_Eingang/.ordnig/`, without inbox in `<archive>/.ordnig/`). More options: `… ordnig help`; tool versions: `… ordnig version`.
 Keep `report/manifest.sha256` somewhere other than the archive.
 
 Details: [docs/architecture.md](docs/architecture.md) · [changelog](CHANGELOG.md) ·

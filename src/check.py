@@ -348,6 +348,7 @@ def main():
     ap.add_argument("--verify", type=Path, help="früheres manifest.sha256 gegen Bestand prüfen")
     ap.add_argument("--quiet", action="store_true", help="keine Tabelle auf der Konsole")
     ap.add_argument("--title", default="Prüfung", help="Titel der Konsolentabelle")
+    ap.add_argument("--eingang", type=Path, default=None, help="Eingangsordner mit .ordnig/ (Protokoll von run)")
     args = ap.parse_args()
 
     root = args.root.resolve()
@@ -362,8 +363,8 @@ def main():
 
     # Bereits migrierte Originale (aus dem Protokoll von migrate.py)
     migrated = defaultdict(list)
-    log = root / ".ordnig" / "migration_log.csv"
-    if log.exists():
+    log = state.state_dir(root, args.eingang) / "migration_log.csv"
+    for log in [p for p in (state.legacy(root, log.parent, log.name), log) if p and p.exists()]:
         for r in csv.DictReader(open(log, encoding="utf-8", errors="surrogateescape")):
             if r["status"] == "ok" and r["ziel"] and Path(r["ziel"]).exists():
                 migrated[os.path.relpath(r["quelle"], root)].append(Path(r["ziel"]).name)

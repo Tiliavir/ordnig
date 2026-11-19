@@ -26,8 +26,9 @@ Aufruf:
   python3 ablage_migrate.py /ablage                    # Vorschau
   python3 ablage_migrate.py /ablage --apply            # ausführen
   python3 ablage_migrate.py /ablage --apply --images tif,tiff --lang deu+eng -j 4
-Das Protokoll liegt in <ablage>/.ordnig/migration_log.csv; Wiederholungs-
-läufe überspringen Erledigtes und machen bei Fehlern weiter.
+Das Protokoll liegt in <eingang>/.ordnig/migration_log.csv (ohne Eingang in
+<ablage>/.ordnig/); Wiederholungsläufe überspringen Erledigtes und machen bei
+Fehlern weiter. Ein Protokoll am alten Ort wird beim nächsten --apply übernommen.
 """
 import argparse, csv, os, re, shutil, subprocess, sys, tempfile, time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -46,6 +47,7 @@ ODF_FOR = {**{e: "odt" for e in TEXT - {"txt"}}, **{e: "ods" for e in CALC - {"d
            **{e: "odp" for e in IMPRESS}}
 PDF_FILTER = {"odt": "writer_pdf_Export", "ods": "calc_pdf_Export", "odp": "impress_pdf_Export"}
 SKIP_DIRS = {"@eaDir", "#recycle", ".git", ".ordnig"}
+LOG_NAME = "migration_log.csv"
 LOG_FIELDS = ["quelle", "aktion", "ziel", "status", "pdfa", "hinweis", "zeit", "sekunden"]
 VERA_BATCH = 50
 
@@ -455,8 +457,10 @@ def main():
     ap.add_argument("--fix-scans", action="store_true",
                     help="Scans automatisch drehen und gerade richten (≈ 40 %% mehr OCR-Zeit)")
     ap.add_argument("-j", "--jobs", type=int, default=None, help="parallele Dateien (Standard: CPU-Anzahl)")
+    ap.add_argument("--eingang", type=Path, default=None,
+                    help="Eingangsordner; dort liegt .ordnig/ (Standard: <root>/00_Eingang oder <root>/*/00_Eingang)")
     ap.add_argument("--log", type=Path, default=None,
-                    help="Protokoll (Standard: <root>/.ordnig/migration_log.csv, reist mit der Ablage)")
+                    help="Protokoll (Standard: <eingang>/.ordnig/migration_log.csv)")
     ap.add_argument("--report", type=Path, default=None, help="Bericht als Markdown-Baum schreiben")
     args = ap.parse_args()
     jobs_given = args.jobs
@@ -465,11 +469,12 @@ def main():
     ocr_jobs = max(1, cpus // args.jobs)          # keine Überbelegung: Dateien × OCR-Threads ≈ CPUs
     root = args.root.resolve()
     if args.log is None:
-        args.log = root / ".ordnig" / "migration_log.csv"
+        args.log = state.state_dir(root, args.eingang) / LOG_NAME
+    old_log = state.legacy(root, args.log.parent, LOG_NAME)
 
     done, generated = set(), set()
-    if args.log.exists():
-        for r in csv.DictReader(open(args.log, encoding="utf-8")):
+    for log in [p for p in (old_log, args.log) if p and p.exists()]:
+        for r in csv.DictReader(open(log, encoding="utf-8")):
             if r["ziel"]: generated.add(r["ziel"])
             if r["aktion"] == "pdfa" and r["status"] in ("ok", "warnung", "übersprungen"):
                 done.add(r["quelle"])
@@ -516,8 +521,11 @@ def main():
 
     t_start = time.monotonic()
     state.open_state(args.log.parent)
-    if args.log.exists():
-        upgrade_log(args.log)
+    for log in (old_log, args.log):
+        if log and log.exists():
+            upgrade_log(log)
+    if old_log:
+        state.adopt(root, args.log.parent, LOG_NAME)
     new_log = not args.log.exists()
     results = defaultdict(list)
     with open(args.log, "a", newline="", encoding="utf-8") as lf:
@@ -590,6 +598,8 @@ def main():
            [f"| {d:.1f} | `{p}` |" for d, p in durations[:15]] if durations else []
     write_report(args.report, "Migration", root, render_tree(root.name, notes), table, foot, slow)
     console_table("Migration", table, [foot[0], f"Details: {args.report}" if args.report else foot[1]])
+    if args.report:
+        shutil.copy2(args.log, args.report.with_name(args.report.stem + "_log.csv"))
     return state.FEHLER if c["fail"] else state.OK
 
 if __name__ == "__main__":

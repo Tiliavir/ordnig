@@ -11,8 +11,7 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 - Exit codes for unattended runs: 0 done, 1 file errors, 2 wrong call or setup,
   3 locked by another run, 4 `sort` left files in `_Prüfen`. `verify` returns 1
   when files changed or are missing.
-- Only one run at a time per `.ordnig` folder (lock, works across machines on
-  NFS/SMB).
+- Only one run at a time (`run` or `sort`; lock, works across machines on NFS/SMB).
 - `.ordnig/version.json` records the state format; a newer format stops an
   older ordnig instead of being misread.
 - `sort` stops when a NAS share looks unmounted (empty mount point, or most of
@@ -21,6 +20,12 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 
 ### Changed
 
+- One state folder: `run` keeps its conversion log in `00_Eingang/.ordnig/` too
+  (found automatically, also as `/ablage/*/00_Eingang` with two shares; `--eingang`
+  for `run`). A log in `<archive>/.ordnig/` is taken over at the next `run`; an
+  archive without inbox keeps it there.
+- `sort` finds the inbox the same way, so `--eingang` is only needed when there
+  are several.
 - `run` finishes the check afterwards even when single files failed, then exits 1.
 - Setup errors (missing archive, tools, bad `regeln.toml`) exit with 2 instead of 1.
 
