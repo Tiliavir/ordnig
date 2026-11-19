@@ -29,6 +29,8 @@ Aufruf:
 Das Protokoll liegt in <eingang>/.ordnig/migration_log.csv (ohne Eingang in
 <ablage>/.ordnig/); Wiederholungsläufe überspringen Erledigtes und machen bei
 Fehlern weiter. Ein Protokoll am alten Ort wird beim nächsten --apply übernommen.
+Der Eingang wird nicht umgewandelt: sort legt die Post ab, der nächste Lauf wandelt
+sie dann am Zielort um.
 """
 import argparse, csv, os, re, shutil, subprocess, sys, tempfile, time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -210,13 +212,20 @@ def finalize_pdfa(pdf: Path):
 
 
 # ----------------------------------------------------------------- Planung
-def plan(root: Path, images: set, done: set, generated: set, info=None):
-    """info (dict, optional) sammelt: already_pdfa (Liste), scan_pdfs (Anzahl)."""
+def walk(root: Path, skip=()):
+    """os.walk ohne eigene/System-Ordner und ohne skip (absolute Pfade, z. B. der Eingang)."""
+    skip = {Path(s) for s in skip}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and Path(dirpath) / d not in skip)
+        yield dirpath, dirnames, filenames
+
+def plan(root: Path, images: set, done: set, generated: set, info=None, skip=()):
+    """info (dict, optional) sammelt: already_pdfa (Liste), scan_pdfs (Anzahl).
+    skip: Ordner, die nicht umgewandelt werden (der Eingang: sort legt die Post erst ab)."""
     info = info if info is not None else {}
     info.setdefault("already_pdfa", []); info.setdefault("scan_pdfs", 0)
     jobs = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+    for dirpath, dirnames, filenames in walk(root, skip):
         for n in sorted(filenames):
             p = Path(dirpath) / n
             if str(p) in generated or n.startswith(("~$", ".~lock", "._")) or p.is_symlink():
@@ -394,11 +403,10 @@ IMAGE_SCAN = ("tif", "tiff")
 IMAGE_MAYBE = ("jpg", "jpeg", "png", "bmp", "gif", "jp2", "webp")
 DEFAULT_LANG = "deu+eng"
 
-def count_images(root: Path, images: set, done: set, generated: set):
+def count_images(root: Path, images: set, done: set, generated: set, skip=()):
     """Bilder, die noch nicht eingeplant sind (nicht in --images, nicht erledigt)."""
     c = Counter()
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+    for dirpath, dirnames, filenames in walk(root, skip):
         for n in filenames:
             ext = n.rsplit(".", 1)[-1].lower() if "." in n else ""
             p = str(Path(dirpath) / n)
@@ -481,7 +489,9 @@ def main():
     images = {e.strip().lower().lstrip(".") for e in args.images.split(",") if e.strip()}
     progress("Plane …")
     info = {}
-    jobs = plan(root, images, done, generated, info)
+    inbox = state.find_inbox(root, args.eingang)
+    skip = [inbox] if inbox else []
+    jobs = plan(root, images, done, generated, info, skip)
     progress_done()
 
     missing = [t for t in ("soffice", "ocrmypdf", "img2pdf") if not shutil.which(t)]
@@ -504,11 +514,12 @@ def main():
         table = [(f"  {KIND_LABEL[k]}", kinds[k]) for k in KIND_LABEL if kinds[k]]
         table = [("Geplant", len(jobs))] + table + [None, ("Ziel belegt (übersprungen)", blocked)] + already + \
                 [("Bereits erledigt", len(done))]
-        found = count_images(root, images, done, generated)
+        found = count_images(root, images, done, generated, skip)
         if found:
             table.append(("Bilder nicht eingeplant", sum(found.values())))
         cmd, hints = suggest(images, args.lang, jobs_given, found, len(jobs), info["scan_pdfs"], args.fix_scans)
-        foot = [vera_note, f"Fehlende Programme: {', '.join(missing)}" if missing else ""]
+        foot = [vera_note, f"Fehlende Programme: {', '.join(missing)}" if missing else "",
+                f"Eingang ausgelassen: {inbox} (wird nach dem Ablegen umgewandelt)" if inbox else ""]
         advice = ([f"Vorschlag: {cmd}", "           (gleicher docker-Aufruf, Ablage ohne :ro – vorher Snapshot)"]
                   if cmd else []) + hints
         write_report(args.report, "Migrationsplan", root, render_tree(root.name, notes), table,

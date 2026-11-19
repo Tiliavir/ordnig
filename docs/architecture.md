@@ -21,6 +21,9 @@ an additional file. One container, no setup on the host.
 
 ## Conversion flow
 
+The inbox is skipped: `sort` files the originals first, the next `run`
+converts them where they landed.
+
 1. Office file → ODF next to it (LibreOffice).
 2. Office/ODF → PDF/A-2 (LibreOffice, tagged, fonts embedded). Used as is
    when every page has text; otherwise OCRmyPDF `--skip-text` for the pages

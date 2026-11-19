@@ -24,6 +24,8 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   (found automatically, also as `/ablage/*/00_Eingang` with two shares; `--eingang`
   for `run`). A log in `<archive>/.ordnig/` is taken over at the next `run`; an
   archive without inbox keeps it there.
+- `run` leaves the inbox alone: mail is converted by the next `run` after
+  `sort` filed it, so original and copies are never filed separately.
 - `sort` finds the inbox the same way, so `--eingang` is only needed when there
   are several.
 - `run` finishes the check afterwards even when single files failed, then exits 1.
