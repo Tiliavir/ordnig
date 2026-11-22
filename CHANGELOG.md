@@ -4,6 +4,14 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
+## [0.8.1] - 2026-11-22
+
+### Changed
+
+- Base image Ubuntu 26.04 LTS (supported until 2031) instead of 25.10, which
+  has had no security updates since 9 July 2026. The image shrinks by about
+  60 MB.
+
 ## [0.8.0] - 2026-11-18
 
 ### Added
