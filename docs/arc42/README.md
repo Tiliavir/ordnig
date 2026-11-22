@@ -22,7 +22,6 @@ into the text or an ADR.
 
 | Q | Topic | Chapter |
 | --- | --- | --- |
-| Q1 | Base image Ubuntu 25.10 is end of life | [11](11-risks.md#q1) |
 | Q2 | Conversion log stores container paths | [8](08-concepts.md#q2) |
 | Q3 | Lock: NAS mounted via NFS or SMB on the PC? | [7](07-deployment.md#q3) |
 | Q4 | Where `/report` and `manifest.sha256` live | [7](07-deployment.md#q4) |
