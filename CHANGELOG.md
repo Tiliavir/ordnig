@@ -4,7 +4,47 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
-## [Unreleased]
+## [0.8.0] - 2026-11-18
+
+### Added
+
+- Exit codes for unattended runs: 0 done, 1 file errors, 2 wrong call or setup,
+  3 locked by another run, 4 `sort` left files in `_Prüfen`. `verify` returns 1
+  when files changed or are missing.
+- Only one run at a time (`run` or `sort`; lock, works across machines on NFS/SMB).
+- `.ordnig/version.json` records the state format; a newer format stops an
+  older ordnig instead of being misread.
+- `sort` stops when a NAS share looks unmounted (empty mount point, or most of
+  the known documents gone) instead of throwing away what it learned.
+  `--ablage-geaendert` accepts a real reorganisation.
+
+### Changed
+
+- One state folder: `run` keeps its conversion log in `00_Eingang/.ordnig/` too
+  (found automatically, also as `/ablage/*/00_Eingang` with two shares; `--eingang`
+  for `run`). A log in `<archive>/.ordnig/` is taken over at the next `run`; an
+  archive without inbox keeps it there.
+- `run` leaves the inbox alone: mail is converted by the next `run` after
+  `sort` filed it, so original and copies are never filed separately.
+- `sort` finds the inbox the same way, so `--eingang` is only needed when there
+  are several.
+- `run` finishes the check afterwards even when single files failed, then exits 1.
+- Setup errors (missing archive, tools, bad `regeln.toml`) exit with 2 instead of 1.
+
+## [0.7.0] - 2026-11-18
+
+### Added
+
+- `ordnig sort` files new documents from `00_Eingang` into the archive: rules
+  from `00_Eingang/.ordnig/regeln.toml` first, then the most similar documents
+  already in the archive. Year folders are filled from the date in the letter.
+  Unsure, unreadable or duplicate files go to `00_Eingang/_Prüfen/` with the
+  reason and a suggestion. Preview unless `--apply`; `--eval` measures accuracy
+  on the archive itself.
+- Rules can also copy a file, e.g. dividends or annual insurance bills into the
+  tax folder: `kopie = "…/0_Steuer/{jahr}"`, optional `kopie_jahr` pattern.
+- All sort state lives in `00_Eingang/.ordnig/` (rules, learned texts, history
+  `protokoll.csv`), so the container can run on any machine.
 
 ### Changed
 

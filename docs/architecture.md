@@ -13,11 +13,16 @@ an additional file. One container, no setup on the host.
 | `src/ordnig` | entry point: `preview`, `run`, `check`, `verify` |
 | `src/check.py` | read-only scan → `report.md`, `files.csv`, `duplicates.csv`, `manifest.sha256`; stdlib only |
 | `src/migrate.py` | plans and runs conversions; preview unless `--apply` |
+| `src/sort.py` | files the inbox into the archive; preview unless `--apply`; stdlib only |
+| `src/state.py` | where the `.ordnig` folder is, its lock and format version, exit codes |
 | LibreOffice (headless) | legacy office → ODF; ODF/office → tagged PDF/A-2 |
 | OCRmyPDF + Tesseract | OCR text layer for pages without text, PDF/A-2 output |
 | veraPDF | validates 2u; decides what gets declared |
 
 ## Conversion flow
+
+The inbox is skipped: `sort` files the originals first, the next `run`
+converts them where they landed.
 
 1. Office file → ODF next to it (LibreOffice).
 2. Office/ODF → PDF/A-2 (LibreOffice, tagged, fonts embedded). Used as is
@@ -38,11 +43,72 @@ Per-file seconds are logged; the report lists the slowest files.
 Targets are reserved during planning so parallel jobs never collide
 (`x.doc` + `x.rtf` → `x.odt`, `x.rtf.odt`).
 
+## Inbox sorting
+
+1. Learn: walk the archive (without the inbox, `ignorieren` folders, `#recycle`,
+   `@eaDir`, `OneNote_RecycleBin`). One example per document: ordnig's PDF/A copy
+   first (it has the OCR text), else the original. No OCR here; scans count only
+   after `ordnig run`. Texts are cached in `00_Eingang/.ordnig/texte.json.gz` by size and mtime.
+   Label = folder; year folders (`2019`) become `{jahr}`.
+2. Read each inbox file: PDF text via Ghostscript (first 3 pages), OCR with
+   Tesseract if there is none; images OCR; ODF/OOXML from their XML; legacy
+   office through LibreOffice; `.eml` subject + body; plain text and HTML.
+3. Decide: first matching rule, else k nearest neighbours (TF-IDF, cosine,
+   k = 7) vote. Filed only if the winner has ≥ 70 % of the vote weight and its
+   best neighbour a similarity ≥ 0.2. `{jahr}` = newest date in the text up to
+   today, or the rule's/folder's `jahr` pattern.
+4. Move: same file system → rename; else copy, fsync, compare SHA-256, then
+   delete the original. Never overwrite (`name_2.pdf`). Same content already in
+   the target folder → `_Prüfen` ("schon abgelegt").
+5. Copies: a rule may add `kopie` folders (e.g. the tax year). Copied after the
+   move with the same SHA-256 check; same content already there → skipped. Year
+   from `kopie_jahr`, else the newest date. A failed copy is an error, the filed
+   original stays.
+
+`--eval` sorts a sample of the archive as if it were new (leave-one-out) and
+shows coverage and accuracy per threshold, year accuracy and the most frequent
+confusions — the basis for choosing thresholds and writing rules.
+
 ## State
 
-`<archive>/.ordnig/migration_log.csv` travels with the archive: generated
-files are not converted again, finished sources are skipped, failed ones are
-retried. Reports and the checksum baseline live in `/report`, outside the archive.
+There is one `.ordnig` folder for everything that must survive a run
+(decision 14), in the inbox: `--eingang`, else `<archive>/00_Eingang`, else
+exactly one `<archive>/*/00_Eingang` (shares mounted below `/ablage`). Only an
+archive without inbox keeps it in `<archive>/.ordnig/`. It holds the rules,
+the learned texts and history of `sort`, and `migration_log.csv` of `run`:
+generated files are not converted again, finished sources are skipped, failed
+ones are retried. A log at the old place (`<archive>/.ordnig/`, up to 0.7) is
+read and taken over at the next `run`; the original stays as `….übernommen`.
+Reports and the checksum baseline live in `/report`, outside the archive.
+
+The folder also has:
+
+- `lock`: a POSIX lock (`lockf`) held for the whole run. A second run on the
+  folder (`run` or `sort`), also from another machine, stops with exit code 3. The file
+  names the holder (host, PID, start). The kernel releases the lock when the
+  process ends, so a crash leaves nothing to clean up.
+- `version.json`: `{"format": 1, "ordnig": "0.8.0"}`. A newer ordnig lifts an
+  older folder step by step (`state.MIGRATIONS`); an older ordnig refuses a
+  newer folder (exit 2) instead of misreading it.
+
+## Operation
+
+Meant to run unattended (systemd timer, cron). Exit codes:
+
+| Code | Meaning |
+| ---: | --- |
+| 0 | done |
+| 1 | errors in single files (`sort`, `run`), changed or missing files (`verify`), or a crash |
+| 2 | wrong call or setup: archive/inbox missing or not mounted, read-only, tools missing, bad `regeln.toml`, data from a newer version |
+| 3 | another run holds the lock |
+| 4 | `sort`: done, but files wait in `_Prüfen` |
+
+Mount guard (`sort`): an unmounted NAS share shows up as an empty folder,
+because `docker -v` creates the host path. `sort` stops (exit 2) if the archive
+or one of its top-level mount points is empty, or if the archive or a mount
+point holds less than half of the documents the last run knew (at least 20).
+Without it, the cache would drop everything learned from that share. A real
+reorganisation passes with `--ablage-geaendert`.
 
 ## Decisions (Proposed)
 
@@ -64,6 +130,38 @@ retried. Reports and the checksum baseline live in `/report`, outside the archiv
 8. Trivy fails the check only on *fixable critical* vulnerabilities; the
    image is large (LibreOffice, JRE) and unfixable findings would only be noise.
 
+9. Inbox sorting learns from the archive's folders instead of a hand-made
+   taxonomy: the archive already is the labelled data.
+10. Rules first (first match wins, like mail filters), similarity second, no
+    LLM yet. An LLM fallback is only worth it if `--eval`/real use shows many
+    files in `_Prüfen`.
+11. k nearest neighbours in the standard library instead of scikit-learn: no new
+    dependency, and every decision names the most similar archived document.
+12. Unsure, unreadable, no year for `{jahr}`, or duplicate → `_Prüfen/` with the
+    reason; nothing is guessed. Wrong config (unknown keys, bad patterns,
+    missing folders) stops the run with all errors listed.
+13. Files keep their names; only collisions get `_2`. (Markus: no naming scheme.)
+14. Everything that must survive a run lives in `00_Eingang/.ordnig/`: rules
+    (`regeln.toml`), what was learned (`texte.json.gz`), the history of every
+    `--apply` (`protokoll.csv`) and, since 0.8, the conversion log of `run`
+    (with two shares below `/ablage`, `/ablage/.ordnig` would be inside the
+    container and lost). Markus runs the container on his PC, not on the
+    NAS, so nothing may depend on the container or `/report`. (stated) Preview
+    writes the cache there too, nothing else.
+15. Copies only through rules: which letters matter for taxes is a decision,
+    not something similarity can learn. Real copies, no hard links (the shares
+    are separate file systems).
+
+16. Exit codes as the interface for automation: a timer or cron job needs no
+    output parsing, and "files wait in `_Prüfen`" (4) is distinct from errors (1).
+17. One lock for the `.ordnig` folder with `lockf`, not `flock`: on NFS and SMB
+    mounts only POSIX locks reach the server, and the container may run on
+    different machines. No stale-lock handling needed.
+18. A format version in the `.ordnig` folder: the state outlives containers
+    and versions (decision 14), so a version change must be detected, not guessed.
+19. The mount guard compares against the cache instead of a marker file: no
+    setup step, and it also catches a share mounted at the wrong path.
+
 ## Quality gates
 
 Unit tests (stdlib `unittest`), shellcheck, smoke test of the real image on
@@ -72,6 +170,10 @@ with these checks green.
 
 ## Known limits
 
+- The lock needs a file system with POSIX locks; across machines that is NFS
+  with lockd or SMB without `nobrl`. ordnig ≤ 0.7 ignores lock and `version.json`.
+- `sort`: `{jahr}` uses the newest date up to today; a tax assessment for 2025
+  sent in 2026 needs a `jahr` pattern. HEIC photos and Outlook `.msg` are not read.
 - Handwriting (Kurrent, Sütterlin) is not recognized; Fraktur via `--lang deu+frk`.
 - Spreadsheets as PDF are for reading; the ODS keeps formulas.
 - Encrypted PDFs are skipped and listed in the log.
