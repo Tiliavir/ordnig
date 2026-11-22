@@ -21,6 +21,17 @@ from pathlib import Path
 OK, FEHLER, SETUP, GESPERRT, PRUEFEN = 0, 1, 2, 3, 4
 
 INBOX, STATE = "00_Eingang", ".ordnig"
+# Ordner, die nie zur Ablage gehören: eigene Daten, Papierkörbe, Snapshots und Indizes von
+# NAS (Synology, QNAP, NetApp/NFS) und Betriebssystemen. Snapshots würden sonst alles doppelt zählen.
+SYSTEM_DIRS = frozenset({
+    STATE, ".git",
+    "@eaDir", "#recycle", "#snapshot",                      # Synology
+    "@Recycle", "@Recently-Snapshot", ".@__thumb",          # QNAP
+    ".snapshot", ".snapshots",                              # NetApp, NFS, Btrfs/snapper
+    "$RECYCLE.BIN", "System Volume Information",            # Windows
+    ".Trashes", ".Spotlight-V100", ".fseventsd", ".TemporaryItems",  # macOS
+    "lost+found", "OneNote_RecycleBin",
+})
 FORMAT = 1               # Aufbau der .ordnig-Ordner; bei jeder inkompatiblen Änderung +1
 MIGRATIONS = {}          # {alte Version: Funktion(ordner)} hebt einen Ordner um eine Version an
 

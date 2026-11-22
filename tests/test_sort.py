@@ -230,6 +230,17 @@ class Move(Tmp):
         self.assertEqual(lines[0], ",".join(sort.LOG_HEADER))
         self.assertEqual(len(lines), 3)
 
+    def test_old_log_gets_new_columns(self):
+        log = self.root / ".ordnig/protokoll.csv"; log.parent.mkdir()
+        log.write_text("zeit,datei,status,nach,kopien,quelle,grund\n2026-11-01,a.pdf,abgelegt,X/a.pdf,,Regel,\n",
+                       encoding="utf-8")
+        r = {"datei": Path("b.pdf"), "status": "abgelegt", "nach": "X/b.pdf", "kopien_nach": [],
+             "quelle": "", "grund": "", "sha256": "ab12"}
+        sort.append_log(log, [r], "2026-11-22 08:00:00")
+        lines = log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(lines, [",".join(sort.LOG_HEADER), "2026-11-01,a.pdf,abgelegt,X/a.pdf,,Regel,,",
+                                 "2026-11-22 08:00:00,b.pdf,abgelegt,X/b.pdf,,,,ab12"])
+
     def test_duplicate_detected_by_content(self):
         self.put("out/x.pdf", "same"); src = self.put("in/y.pdf", "same")
         self.assertEqual(sort.same_file_in(self.root / "out", src).name, "x.pdf")

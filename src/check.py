@@ -212,12 +212,39 @@ def sha256(path, bufsize=1 << 20):
             h.update(chunk)
     return h.hexdigest()
 
+# ---------------------------------------------------------------- Gewollte Kopien
+COPY_SUFFIX = " (schon vorhanden)"
+
+def intended_copies(log: Path):
+    """Aus dem Protokoll von sort: Dateien, die eine Regel absichtlich mehrfach abgelegt hat (kopie).
+    -> (Hash -> Anzahl Exemplare, [Pfadmengen] für ältere Zeilen ohne Hash)."""
+    by_hash, by_paths = {}, []
+    if not log.is_file():
+        return by_hash, by_paths
+    with open(log, newline="", encoding="utf-8", errors="surrogateescape") as fh:
+        for r in csv.DictReader(fh):
+            if r.get("status") != "abgelegt" or not r.get("kopien"):
+                continue
+            paths = {r["nach"]} | {k.removesuffix(COPY_SUFFIX).strip() for k in r["kopien"].split(" | ")}
+            if r.get("sha256"):
+                by_hash[r["sha256"]] = max(by_hash.get(r["sha256"], 0), len(paths))
+            else:
+                by_paths.append(paths)
+    return by_hash, by_paths
+
+def is_intended(digest, rels, by_hash, by_paths):
+    """Gewollt, wenn eine Regel genau diese Exemplare angelegt hat; ein weiteres Duplikat bleibt ein Befund."""
+    if digest in by_hash:
+        return len(rels) <= by_hash[digest]
+    return any(set(rels) <= paths for paths in by_paths)
+
+
 # ---------------------------------------------------------------- Scan
 def scan(root: Path, args):
     files, empty_dirs, dir_errors = [], [], []
     case_map = defaultdict(list)
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: dir_errors.append(str(e))):
-        dirnames[:] = [d for d in dirnames if not d.startswith("@eaDir") and d not in ("#recycle", ".ordnig")]  # Synology, eigene Daten
+        dirnames[:] = [d for d in dirnames if d not in state.SYSTEM_DIRS]
         if not dirnames and not filenames:
             empty_dirs.append(os.path.relpath(dirpath, root))
         lower = Counter(n.lower() for n in filenames + dirnames)
@@ -415,7 +442,7 @@ def main():
                          ext=ext, mime=mime, risk=risk, kind=kind, issues="; ".join(issues), _p=p))
 
     # Prüfsummen (alle Dateien, fürs Manifest) – Duplikate daraus
-    dup_groups = []
+    dup_groups, intended = [], []
     if not args.no_hash:
         todo = [r for r in rows if r.get("_p") is not None and r["size"] > 0]
         for i, r in enumerate(todo, 1):
@@ -424,13 +451,22 @@ def main():
             except OSError as e: r["issues"] += f"; Lesefehler beim Hashen: {e.strerror}"
         groups = defaultdict(list)
         for p, h in hashes.items(): groups[h].append(p)
-        dup_groups = sorted((g for g in groups.values() if len(g) > 1),
-                            key=lambda g: -g[0].stat().st_size * (len(g) - 1))
+        by_hash, by_paths = intended_copies(state.state_dir(root, args.eingang) / "protokoll.csv")
+        for h, g in groups.items():
+            if len(g) > 1:
+                rels = [str(p.relative_to(root)) for p in g]
+                (intended if is_intended(h, rels, by_hash, by_paths) else dup_groups).append(g)
+        dup_groups.sort(key=lambda g: -g[0].stat().st_size * (len(g) - 1))
         by_path = {r.get("_p"): r for r in rows}
+        def others(g, p):
+            o = [str(q.relative_to(root)) for q in g if q != p]
+            return ", ".join(o[:3]) + (f" +{len(o)-3}" if len(o) > 3 else "")
         for gi, g in enumerate(dup_groups, 1):
             for p in g:
-                others = [str(q.relative_to(root)) for q in g if q != p]
-                by_path[p]["dup"] = f"Duplikat (Gruppe {gi}): " + ", ".join(others[:3]) + (f" +{len(others)-3}" if len(others) > 3 else "")
+                by_path[p]["dup"] = f"Duplikat (Gruppe {gi}): " + others(g, p)
+        for g in intended:
+            for p in g:
+                by_path[p]["info"] = "; ".join(x for x in (by_path[p].get("info"), "gewollte Kopie (Regel): " + others(g, p)) if x)
         with open(args.out / "manifest.sha256", "w", encoding="utf-8", errors="surrogateescape") as m:
             for r in rows:
                 p = r.get("_p")
@@ -459,7 +495,8 @@ def main():
         for p in changed:
             by_rel[p]["issues"] = "; ".join(filter(None, [by_rel[p]["issues"], "Inhalt geändert seit letzter Prüfung (Bitrot oder bearbeitet?)"]))
         for p in new:
-            by_rel[p]["info"] = f"verschoben von {moved[p]}" if p in moved else "neu seit letzter Prüfung"
+            note = f"verschoben von {moved[p]}" if p in moved else "neu seit letzter Prüfung"
+            by_rel[p]["info"] = "; ".join(filter(None, [by_rel[p].get("info"), note]))
         gone = [p for p in missing if p not in set(moved.values())]
         vstat = dict(changed=len(changed), gone=gone, moved=len(moved), new=len(new) - len(moved))
     progress_done()
@@ -524,6 +561,9 @@ def main():
     if dup_groups:
         L += ["", "### Duplikate", "", f"{num(len(dup_groups))} Gruppen, {hs(waste)} redundant. "
               "Im Baum mit ⧉ markiert; alle Gruppen in `duplicates.csv`."]
+    if intended:
+        L += ["", f"{num(len(intended))} Dateien hat eine Regel absichtlich mehrfach abgelegt (`kopie`); "
+              "sie sind kein Befund und im Baum mit ℹ gewollte Kopie markiert."]
     if years:
         L += ["", "### Dateien nach Änderungsjahr", "", "```text"]
         mx = max(years.values())
@@ -544,7 +584,9 @@ def main():
     t += [(f"  {k[:38]}", num(c), "") for k, c in issue_cnt.most_common(5)]
     if len(issue_cnt) > 5: t.append((f"  … {len(issue_cnt) - 5} weitere Arten", "", ""))
     t.append(None)
-    if not args.no_hash: t.append(("Duplikat-Gruppen", num(len(dup_groups)), hs(waste) + " redundant" if waste else ""))
+    if not args.no_hash:
+        t.append(("Duplikat-Gruppen", num(len(dup_groups)), hs(waste) + " redundant" if waste else ""))
+        if intended: t.append(("  gewollte Kopien (Regel)", num(len(intended)), "kein Befund"))
     t += [(k, num(v), "") for k, v in extra if v]
     if vstat:
         t += [None, ("Seit letzter Prüfung geändert", num(vstat["changed"]), ""), ("  fehlt", num(len(vstat["gone"])), ""),

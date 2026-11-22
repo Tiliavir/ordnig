@@ -17,7 +17,7 @@ Location: `--eingang`, else `<archive>/00_Eingang`, else exactly one
 | --- | --- | --- |
 | `regeln.toml` | owner | rules, thresholds, ignored folders, year patterns |
 | `texte.json.gz` | `sort` (also in preview) | cached texts of the archive by size and mtime |
-| `protokoll.csv` | `sort --apply` | every filed file, copy and `_Prüfen` decision |
+| `protokoll.csv` | `sort --apply` | every filed file (with SHA-256), copy and review decision |
 | `migration_log.csv` | `run` | every conversion; newest row per file wins |
 | `version.json` | all writers | format of the folder and the ordnig version that set it |
 | `lock` | all writers | POSIX lock for the whole run; names the holder |
@@ -72,6 +72,14 @@ an unmounted share. `--ablage-geaendert` accepts a real reorganisation.
 > them with `sort --eval`. Should the default aim at a fixed error rate (e.g. ≤ 2 % wrongly
 > filed, more in the review folder), and should `--eval` suggest the values?
 
+## System folders
+
+All commands skip the same folders that never belong to the archive: ordnig's
+own `.ordnig`, `.git`, recycle bins, snapshots and indexes of NAS systems (Synology,
+QNAP, NetApp/NFS, Btrfs) and operating systems (Windows, macOS). Snapshots would
+otherwise count every file twice. `sort` also skips hidden folders and the owner's
+`ignorieren` list.
+
 ## Format assessment (`check`)
 
 Every extension is `ok` (open, widespread), `watch` (common but proprietary or
@@ -80,11 +88,13 @@ truncated PDF/JPEG/PNG, broken ZIP-based files, encryption, wrong extensions
 (libmagic), bad file names (encoding, NFD, Windows-invalid, reserved names),
 empty files and folders, duplicates (SHA-256).
 
-<a id="q14"></a>
-> [!IMPORTANT]
-> **Q14 – Rule copies as duplicates:** Copies made by a rule (`kopie`) are intended duplicates, but `check` lists them as
-> duplicates. Mark copies recorded in `protokoll.csv` as intended and leave them out of
-> the duplicate findings?
+### Intended copies
+
+`sort` records the SHA-256 of every filed document in `protokoll.csv`. `check`
+reads it: a duplicate group whose hash a rule copied, with no more members than the
+rule made, is an intended copy (ℹ in the tree, not counted as redundant). One more
+identical file is a duplicate again. Matching by hash survives moving or renaming;
+rows from before 0.9 are matched by path ([ADR](adr/ADR-20261122-intended-copies-by-hash.md)).
 
 ## Reports
 

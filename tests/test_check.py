@@ -104,5 +104,30 @@ class Format(unittest.TestCase):
         self.assertEqual(check.num(1234567), "1.234.567")
 
 
+class IntendedCopies(unittest.TestCase):
+    """Copies a rule made on purpose (sort: kopie) are no duplicate finding; one more copy is."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); self.log = Path(self.dir.name) / "protokoll.csv"
+        self.log.write_text(
+            "zeit,datei,status,nach,kopien,quelle,grund,sha256\n"
+            "t,a.pdf,abgelegt,V/a.pdf,S/2026/a.pdf,Regel,,h1\n"
+            "t,b.pdf,abgelegt,V/b.pdf,S/2025/b.pdf (schon vorhanden),Regel,,\n"   # older row: no hash
+            "t,c.pdf,prüfen,_Prüfen/c.pdf,,,unsicher,h3\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_by_hash_and_by_path(self):
+        by_hash, by_paths = check.intended_copies(self.log)
+        self.assertTrue(check.is_intended("h1", ["X/moved.pdf", "S/2026/a.pdf"], by_hash, by_paths))
+        self.assertFalse(check.is_intended("h1", ["V/a.pdf", "S/2026/a.pdf", "Y/a.pdf"], by_hash, by_paths))
+        self.assertTrue(check.is_intended("h2", ["S/2025/b.pdf", "V/b.pdf"], by_hash, by_paths))
+        self.assertFalse(check.is_intended("h2", ["S/2025/b.pdf", "Z/b.pdf"], by_hash, by_paths))
+        self.assertNotIn("h3", by_hash)                                   # not filed: no copy intended
+
+    def test_missing_log(self):
+        self.assertEqual(check.intended_copies(Path(self.dir.name) / "nope.csv"), ({}, []))
+
+
 if __name__ == "__main__":
     unittest.main()

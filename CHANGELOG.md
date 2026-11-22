@@ -4,6 +4,21 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
+## [0.9.0] - 2026-11-22
+
+### Added
+
+- `check` recognises copies made by a `sort` rule (`kopie`) as intended: marked ℹ in
+  the tree, not counted as duplicates. `sort` records the SHA-256 of every filed
+  document in `protokoll.csv` for this; older logs get the column added.
+
+### Changed
+
+- All commands skip the same system folders, now also snapshots and recycle bins of
+  QNAP, NetApp/NFS, Btrfs, Windows and macOS (Synology already before).
+- Architecture documented as arc42 in `docs/arc42/` (product view, one file per ADR);
+  replaces `docs/architecture.md` and `OPEN.md`.
+
 ## [0.8.0] - 2026-11-18
 
 ### Added
@@ -28,8 +43,6 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   `sort` filed it, so original and copies are never filed separately.
 - `sort` finds the inbox the same way, so `--eingang` is only needed when there
   are several.
-- Architecture documented as arc42 in `docs/arc42/` (one file per chapter, one per ADR);
-  replaces `docs/architecture.md`.
 - `run` finishes the check afterwards even when single files failed, then exits 1.
 - Setup errors (missing archive, tools, bad `regeln.toml`) exit with 2 instead of 1.
 

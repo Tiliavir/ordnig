@@ -124,6 +124,13 @@ for f in texte.json.gz protokoll.csv version.json; do
 done
 ORDNIG_SRC=$S ordnig sort --eval | grep -q 'Jahr richtig' || fail "sort --eval"
 
+# check: the copy made by the rule is intended, not a duplicate finding
+mkdir -p "$W/check-sort"
+ORDNIG_SRC=$S ORDNIG_OUT=$W/check-sort ordnig check > /dev/null
+rep=$(echo "$W"/check-sort/*-check/report.md)
+grep 'beitrag.pdf' "$rep" | grep -q 'gewollte Kopie (Regel)' || fail "check: rule copy not marked as intended"
+! grep 'beitrag.pdf' "$rep" | grep -q 'Duplikat (Gruppe' || fail "check: rule copy reported as duplicate"
+
 # verify: a changed file is exit code 1 (for cron/systemd)
 echo x >> "$ORDNIG_SRC/Briefe/konto.xls"
 rc=0; ordnig verify > /dev/null || rc=$?

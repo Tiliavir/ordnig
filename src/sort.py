@@ -9,7 +9,8 @@ Für jede Datei im Eingang (Standard: <ablage>/00_Eingang):
      Gelernt wird aus der Ablage selbst: jeder Ordner ist eine Klasse, Jahresordner
      (2019, 2020 …) werden zu {jahr}; das Jahr kommt aus dem jüngsten Datum im Dokument.
   4. Unsicher, unlesbar, ohne Datum für {jahr} oder schon abgelegt: <eingang>/_Prüfen/.
-  Regeln können zusätzlich Kopien anlegen (kopie = "…/0_Steuer/{jahr}"), z. B. für die Steuer.
+  Regeln können zusätzlich Kopien anlegen (kopie = "…/{jahr}"), z. B. in einen Steuerordner.
+  Das Protokoll hält die SHA-256 jeder abgelegten Datei: check erkennt so gewollte Kopien.
 
 Ohne --apply nur Vorschau. --eval misst an der Ablage selbst, wie gut das klappt.
 Alles, was zwischen Läufen bleibt, liegt in <eingang>/.ordnig/ (der Container kann auf
@@ -41,7 +42,7 @@ migrate, state = _load("migrate"), _load("state")
 
 REVIEW = "_Prüfen"
 STATE = ".ordnig"
-SKIP_DIRS = migrate.SKIP_DIRS | {"OneNote_RecycleBin"}
+SKIP_DIRS = state.SYSTEM_DIRS
 YEAR_DIR = re.compile(r"(19|20)\d\d")
 JAHR = "{jahr}"
 MIN_WORDS = 8            # weniger Wörter: kein brauchbarer Text
@@ -742,6 +743,7 @@ def main():
         if args.apply:
             try:
                 dst.parent.mkdir(parents=r["ziel"] is None, exist_ok=True)   # nur Jahresordner neu
+                r["sha256"] = sha256(f)
                 move_safely(f, dst)
             except OSError as e:
                 status, r["grund"] = "fehler", f"{type(e).__name__}: {e}"
@@ -784,11 +786,29 @@ def main():
         waiting += counts["prüfen"]
     return state.PRUEFEN if waiting else state.OK
 
-LOG_HEADER = ["zeit", "datei", "status", "nach", "kopien", "quelle", "grund"]
+LOG_HEADER = ["zeit", "datei", "status", "nach", "kopien", "quelle", "grund", "sha256"]
+
+def upgrade_log(path: Path):
+    """Ergänzt Spalten, die ältere Versionen noch nicht schrieben (leer)."""
+    with open(path, newline="", encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))
+    if not rows or rows[0] == LOG_HEADER:
+        return
+    old = rows[0]
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(LOG_HEADER)
+        for row in rows[1:]:
+            d = dict(zip(old, row))
+            w.writerow([d.get(k, "") for k in LOG_HEADER])
+    tmp.replace(path)
 
 def append_log(path: Path, results, stamp):
     """Dauerhaftes Protokoll im Eingang: was wohin abgelegt wurde (auch zum Rückgängigmachen)."""
     path.parent.mkdir(exist_ok=True)
+    if path.exists():
+        upgrade_log(path)
     new = not path.exists()
     with open(path, "a", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
@@ -796,7 +816,7 @@ def append_log(path: Path, results, stamp):
             w.writerow(LOG_HEADER)
         for r in results:
             w.writerow([stamp, r["datei"].name, r["status"], r["nach"], " | ".join(r["kopien_nach"]),
-                        r["quelle"], r["grund"]])
+                        r["quelle"], r["grund"], r.get("sha256", "")])
 
 def write_sort_report(path, root, eingang, results, table, notes, applied):
     if not path:
