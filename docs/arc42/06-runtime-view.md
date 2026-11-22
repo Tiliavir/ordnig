@@ -56,15 +56,10 @@ flowchart TD
   as if it were new and shows coverage, accuracy and year accuracy per threshold.
 - Move across file systems: copy, fsync, compare SHA-256, then delete. Never
   overwrite; a name collision gets `_2`.
-- Copies (`kopie`, e.g. tax year) only after the original is filed, with the same
+- Copies (`kopie`, e.g. into a tax year folder) only after the original is filed, with the same
   check; a failed copy is an error, the filed original stays.
 - Every `--apply` appends to `.ordnig/protokoll.csv`.
 
-<a id="q10"></a>
-> [!IMPORTANT]
-> **Q10 – Tax year of annual insurance bills:** The year of a copy comes from `kopie_jahr` or the newest date in the letter. For
-> annual bills of R+V and Allianz Direct the wording is not known yet: a bill from
-> December 2025 for 2026 would land in `Steuer/2025`. A blacked-out sample of each is needed.
 
 ## Bit rot (`verify`)
 
@@ -74,17 +69,17 @@ path with the same hash count as moved, new files as new.
 
 <a id="q7"></a>
 > [!IMPORTANT]
-> **Q7 – check/verify and 00_Eingang:** `check` and `verify` scan the inbox too. Mail filed by `sort` then shows up as
-> "moved", new mail as "new", and the check report lists format risks of unsorted
-> mail. Should `check` skip `00_Eingang` like `run` does?
+> **Q7 – check/verify and 00_Eingang:** `check` and `verify` scan the inbox too. Documents filed by `sort` then show up
+> as "moved", new ones as "new", and the check report lists format risks of
+> unsorted documents. Should `check` skip `00_Eingang` like `run` does?
 
-## Unattended run (planned)
+## Unattended run
 
 ```mermaid
 sequenceDiagram
     participant T as timer on the PC
     participant O as ordnig sort --apply
-    T->>O: start (NAS mounted?)
+    T->>O: start (storage mounted?)
     O->>O: mount guard, lock, format version
     O-->>T: exit 0 · 1 · 2 · 3 · 4
     Note over T: 1/2 → look at the report, 4 → look at _Prüfen

@@ -8,4 +8,4 @@ Status: Proposed (2026-11-16)
 
 ## Why
 
-The archive already is the labelled data; no hand-made taxonomy to maintain.
+The archive already is the labelled data; no hand-made taxonomy to maintain, and it adapts to any archive's structure.

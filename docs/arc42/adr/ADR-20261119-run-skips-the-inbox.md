@@ -8,4 +8,4 @@ Status: Proposed (2026-11-19)
 
 ## Why
 
-Copies next to unsorted mail would be filed separately from their original. (stated)
+Copies next to unsorted documents would be filed separately from their original.

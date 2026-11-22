@@ -6,7 +6,7 @@
 - Nothing is overwritten: name collisions get a free name (`_2`, `x.rtf.odt`).
 - Moves across file systems: copy → fsync → compare SHA-256 → delete original.
 - `preview` and the read-only commands work with the archive mounted `:ro`.
-- Unclear cases are parked (`_Prüfen/`, log status `fehler`), never guessed.
+- Unclear cases are parked (review folder `_Prüfen/`, log status `fehler`), never guessed.
 
 ## State: one `.ordnig` folder
 
@@ -15,7 +15,7 @@ Location: `--eingang`, else `<archive>/00_Eingang`, else exactly one
 
 | File | Written by | Content |
 | --- | --- | --- |
-| `regeln.toml` | Markus | rules, thresholds, ignored folders, year patterns |
+| `regeln.toml` | owner | rules, thresholds, ignored folders, year patterns |
 | `texte.json.gz` | `sort` (also in preview) | cached texts of the archive by size and mtime |
 | `protokoll.csv` | `sort --apply` | every filed file, copy and `_Prüfen` decision |
 | `migration_log.csv` | `run` | every conversion; newest row per file wins |
@@ -28,7 +28,7 @@ format step by step; an older ordnig refuses a newer one (exit 2).
 
 <a id="q2"></a>
 > [!IMPORTANT]
-> **Q2 – Container paths in the conversion log:** `migration_log.csv` stores paths as the container sees them (`/ablage/documents/…`).
+> **Q2 – Container paths in the conversion log:** `migration_log.csv` stores paths as the container sees them (`/ablage/share2/…`).
 > Mounted differently, `run` no longer recognises generated files and may convert them
 > again. Store paths relative to the archive root instead (format 2, with a migration)?
 
@@ -68,9 +68,9 @@ an unmounted share. `--ablage-geaendert` accepts a real reorganisation.
 
 <a id="q8"></a>
 > [!IMPORTANT]
-> **Q8 – Thresholds:** `anteil` 0.7 and `aehnlichkeit` 0.2 are a first guess. Set them from `sort --eval`
-> on your archive: which share of wrongly filed documents is acceptable for you (e.g.
-> ≤ 2 %), in exchange for more files in `_Prüfen`?
+> **Q8 – Thresholds:** The defaults `anteil` 0.7 and `aehnlichkeit` 0.2 are a first guess. Each owner tunes
+> them with `sort --eval`. Should the default aim at a fixed error rate (e.g. ≤ 2 % wrongly
+> filed, more in the review folder), and should `--eval` suggest the values?
 
 ## Format assessment (`check`)
 
@@ -82,9 +82,9 @@ empty files and folders, duplicates (SHA-256).
 
 <a id="q14"></a>
 > [!IMPORTANT]
-> **Q14 – Tax copies as duplicates:** Copies made by `sort` for the tax folder are intentional duplicates, and `run`
-> then converts both. `check` lists them as duplicates. Mark copies recorded in
-> `protokoll.csv` as intended and leave them out of the duplicate findings?
+> **Q14 – Rule copies as duplicates:** Copies made by a rule (`kopie`) are intended duplicates, but `check` lists them as
+> duplicates. Mark copies recorded in `protokoll.csv` as intended and leave them out of
+> the duplicate findings?
 
 ## Reports
 

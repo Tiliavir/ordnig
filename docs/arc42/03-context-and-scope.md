@@ -2,39 +2,32 @@
 
 ```mermaid
 flowchart LR
-    M([Markus]) -- "docker run …" --> O[ordnig container]
-    O -- "read, add copies, move mail" --> A[(NAS shares\nhome + documents\nincl. 00_Eingang)]
-    O -- "reports, manifest.sha256" --> R[(/report\non the PC)]
-    M -- "drops mail" --> A
-    M -- "reads" --> R
-    GH[GitHub Actions] -- "image" --> REG[(ghcr.io)]
-    REG -- "pull" --> O
+    U([Owner]) -- "docker run …" --> O[ordnig container]
+    O -- "read, add copies, move documents" --> A[(Archive\none or more mounts\nincl. inbox)]
+    O -- "reports, manifest.sha256" --> R[(Report folder)]
+    U -- "drops documents" --> A
+    U -- "reads" --> R
+    S[Scheduler] -. "starts, reads exit code" .-> O
+    REG[(ghcr.io)] -- "image" --> O
 ```
 
 | Neighbour | Interface |
 | --- | --- |
-| Archive (NAS) | Mounted at `/ablage`; read-only for `preview`, `check`, `verify`; writable for `run` and `sort --apply`. |
-| Inbox `00_Eingang` | Folder in the `home` share; Markus drops mail there in any format. |
-| `/report` | Mounted folder outside the archive: Markdown reports, CSVs, checksum baseline. |
-| Scheduler (planned) | Starts the container; reads only the exit code ([8](08-concepts.md#exit-codes)). |
+| Archive | Mounted at `/ablage` (one mount, or several below it); read-only for `preview`, `check`, `verify`; writable for `run` and `sort --apply`. |
+| Inbox | Folder in the archive (default `00_Eingang`); documents of any format. |
+| Report folder | Mounted at `/report`, outside the archive: Markdown reports, CSVs, checksum baseline. |
+| Scheduler (optional) | systemd timer, cron, NAS task scheduler; acts on the exit code ([8](08-concepts.md#exit-codes)). Notifying the owner is its job. |
 
-**Out of scope:** backup and restore, repairing damaged files, editing
-documents, renaming files (they keep their names).
+**Out of scope:** backup and restore (`verify` detects damage, a versioned backup
+repairs it), editing documents, renaming files, fetching documents from elsewhere.
 
 <a id="q11"></a>
 > [!IMPORTANT]
-> **Q11 – HEIC and Outlook .msg:** `sort` cannot read HEIC photos or Outlook `.msg` files; they go to `_Prüfen`.
-> Does mail arrive in these formats (phone photos of letters, mails saved from Outlook)?
-> If yes, support for them would be the next feature.
+> **Q11 – HEIC and Outlook .msg:** `sort` cannot read HEIC photos or Outlook `.msg` files; they go to the review folder.
+> Both are common for scanned or forwarded mail (phone photos, Outlook). Support them next?
 
 <a id="q12"></a>
 > [!IMPORTANT]
-> **Q12 – Portal downloads:** You want letters fetched automatically from provider portals (banks, insurers, building
-> society, energy supplier). Should that become part of ordnig (filling `00_Eingang`) or
-> a separate tool? It needs logins and per-portal code, which ordnig avoids so far.
-
-<a id="q13"></a>
-> [!IMPORTANT]
-> **Q13 – Backup and repair:** `verify` only detects bit rot; a damaged file must come back from a backup. Which
-> backup covers both shares (e.g. Synology Hyper Backup), and does it keep versions
-> older than the next `verify`? Otherwise a damaged file would already be in the backup.
+> **Q12 – Fetching documents:** Fetching documents from provider portals (banks, insurers) would feed the inbox. As
+> part of ordnig it needs logins and per-portal code, which ordnig avoids so far. Keep
+> it out of scope (a separate tool that writes into the inbox), or plan it in?

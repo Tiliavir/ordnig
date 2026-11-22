@@ -8,4 +8,4 @@ Everything that must survive a run lives in one folder, `00_Eingang/.ordnig/`: r
 
 ## Why
 
-Markus runs the container on his PC, not on the NAS; nothing may depend on the container or `/report`. (stated) With two shares mounted below `/ablage`, `/ablage/.ordnig` would be inside the container and lost. One folder means one lock for `run` and `sort`.
+Containers are short-lived and may run on another host or in another version next time, so nothing may depend on the container or `/report`. With several mounts below `/ablage`, `/ablage/.ordnig` would be inside the container and lost. One folder means one lock for `run` and `sort`.

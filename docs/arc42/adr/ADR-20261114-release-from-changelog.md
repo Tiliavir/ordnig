@@ -8,4 +8,4 @@ The newest `CHANGELOG.md` version without a tag is released by CI on `main` (ima
 
 ## Why
 
-Same process as in Allmend; no tags pushed by hand.
+One reviewed change carries version, notes and release; no tags pushed by hand.
