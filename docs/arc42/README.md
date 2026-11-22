@@ -1,5 +1,8 @@
 # ordnig – architecture (arc42)
 
+The product, not one installation: folders, rules and schedule of an archive are
+configuration and do not appear here.
+
 | # | Chapter |
 | --- | --- |
 | 1 | [Introduction and goals](01-introduction-and-goals.md) |
@@ -23,16 +26,11 @@ into the text or an ADR.
 | Q | Topic | Chapter |
 | --- | --- | --- |
 | Q2 | Conversion log stores container paths | [8](08-concepts.md#q2) |
-| Q3 | Lock: NAS mounted via NFS or SMB on the PC? | [7](07-deployment.md#q3) |
-| Q4 | Where `/report` and `manifest.sha256` live | [7](07-deployment.md#q4) |
-| Q5 | How runs are started and who is notified | [7](07-deployment.md#q5) |
-| Q6 | GPU as the reason for the PC | [7](07-deployment.md#q6) |
 | Q7 | `check`/`verify` also scan `00_Eingang` | [6](06-runtime-view.md#q7) |
 | Q8 | Thresholds for `sort` | [8](08-concepts.md#q8) |
 | Q9 | LLM fallback | [4](04-solution-strategy.md#q9) |
-| Q10 | Tax year of annual insurance bills | [6](06-runtime-view.md#q10) |
-| Q11 | HEIC and Outlook `.msg` in the inbox | [3](03-context-and-scope.md#q11) |
-| Q12 | Portal downloads: part of ordnig? | [3](03-context-and-scope.md#q12) |
-| Q13 | Backup and repair outside ordnig | [3](03-context-and-scope.md#q13) |
-| Q14 | Tax copies reported as duplicates | [8](08-concepts.md#q14) |
+| Q11 | HEIC and Outlook `.msg` | [3](03-context-and-scope.md#q11) |
+| Q12 | Fetching documents: part of ordnig? | [3](03-context-and-scope.md#q12) |
+| Q14 | Rule copies reported as duplicates | [8](08-concepts.md#q14) |
 | Q15 | ADRs to accept | [9](09-decisions.md#q15) |
+| Q16 | Language of the user interface | [2](02-constraints.md#q16) |
