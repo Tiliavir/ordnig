@@ -57,6 +57,10 @@ docker run … ghcr.io/tiliavir/ordnig sort           # preview
 docker run … ghcr.io/tiliavir/ordnig sort --apply   # move the files
 ```
 
+For timers and cron jobs: exit code 0 done, 1 file errors, 2 setup (e.g. NAS
+share not mounted), 3 another run is active, 4 files wait in `_Prüfen`.
+Details: [operation](docs/architecture.md#operation).
+
 ### Check for bit rot regularly
 
 Run `verify` monthly, e.g. as a Synology *Task Scheduler* task (user-defined
@@ -68,7 +72,7 @@ script) or a cron job, and read the table it prints (the task can mail it):
 ```
 
 `run` can be interrupted and restarted; it continues where it stopped
-(state in `<archive>/.ordnig/`). More options: `… ordnig help`; tool versions: `… ordnig version`.
+(state in `00_Eingang/.ordnig/`, without inbox in `<archive>/.ordnig/`). More options: `… ordnig help`; tool versions: `… ordnig version`.
 Keep `report/manifest.sha256` somewhere other than the archive.
 
 Details: [docs/architecture.md](docs/architecture.md) · [changelog](CHANGELOG.md) ·

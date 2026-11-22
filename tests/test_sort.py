@@ -160,6 +160,54 @@ class Classify(Tmp):
         self.assertEqual((r["ziel"], r["grund"]), (None, "kein Jahr erkannt für Bank/{jahr}"))
 
 
+class MountGuard(Tmp):
+    """An unmounted share must stop the run, not wipe what was learned (texte.json.gz)."""
+    def setUp(self):
+        super().setUp()
+        for i in range(30):
+            self.put(f"Bank/{i}.txt", f"{DKB} Brief {i}")
+        self.inbox = self.root / "00_Eingang"; self.inbox.mkdir()
+        self.cfg = sort.load_config(self.root / "nope.toml", self.root)
+        self.cache = self.root / "00_Eingang/.ordnig/texte.json.gz"
+
+    def learn(self, **kw):
+        return sort.learn(self.root, self.inbox, self.cfg, self.cache, "deu", 1, **kw)
+
+    def test_stops_when_most_known_documents_are_gone(self):
+        self.learn()
+        size = self.cache.stat().st_size
+        for i in range(20):
+            (self.root / f"Bank/{i}.txt").unlink()
+        with self.assertRaises(SystemExit) as e:
+            self.learn()
+        self.assertIn("nur noch 10 von 30", str(e.exception))
+        self.assertEqual(self.cache.stat().st_size, size)          # cache untouched
+        docs, _ = self.learn(changed_ok=True)                      # on purpose: learn anew
+        self.assertEqual(len(docs), 10)
+
+    def test_small_changes_and_first_run_pass(self):
+        for i in range(25, 30):
+            (self.root / f"Bank/{i}.txt").unlink()
+        self.learn()                                               # first run: nothing known yet
+        for i in range(15, 25):
+            (self.root / f"Bank/{i}.txt").unlink()
+        docs, _ = self.learn()                                     # 15 of 25 left: more than half
+        self.assertEqual(len(docs), 15)
+
+    def test_empty_mount_point_stops(self):
+        (self.root / "documents").mkdir()
+        real = sort.os.path.ismount
+        sort.os.path.ismount = lambda p: Path(p) == self.root / "documents"
+        try:
+            with self.assertRaises(SystemExit) as e:
+                sort.check_mounts(self.root)
+            self.assertIn("gemountet", str(e.exception))
+            self.put("documents/a.txt")
+            sort.check_mounts(self.root)
+        finally:
+            sort.os.path.ismount = real
+
+
 class Move(Tmp):
     def test_never_overwrites(self):
         a = self.put("in/a.txt", "neu"); self.put("out/a.txt", "alt")

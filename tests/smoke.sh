@@ -67,6 +67,7 @@ ordnig run --images png >/dev/null
 
 ordnig verify >/dev/null
 grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
+[[ -s $ORDNIG_SRC/.ordnig/version.json ]] || fail "run: missing .ordnig/version.json"
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 
@@ -97,17 +98,36 @@ gs -q -dNOPAUSE -dBATCH -sDEVICE=pnggray -r300 -o "$S/00_Eingang/scan.png" neu.p
 cp "$S/Bank/2025/konto1.pdf" "$S/00_Eingang/doppelt.pdf"
 printf 'PK\005\006%018d' 0 > "$S/00_Eingang/archiv.zip"
 
-ORDNIG_SRC=$S ordnig sort > "$W/sort-preview.txt"
+# exit code 4: done, but files wait in _Prüfen (here: the duplicate and the broken zip)
+rc=0; ORDNIG_SRC=$S ordnig sort > "$W/sort-preview.txt" || rc=$?
+[[ $rc == 4 ]] || { cat "$W/sort-preview.txt"; fail "sort preview: exit $rc, expected 4"; }
 [[ -e $S/00_Eingang/auszug.pdf && ! -e $S/Bank/2026 ]] || fail "sort preview moved files"
-ORDNIG_SRC=$S ordnig sort --apply > "$W/sort.txt" || { cat "$W/sort.txt"; fail "sort --apply"; }
+
+# exit code 3: another run holds the lock
+python3 -I -c 'import fcntl, os, sys, time
+fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT); fcntl.lockf(fd, fcntl.LOCK_EX)
+print("locked", flush=True); time.sleep(120)' "$S/00_Eingang/.ordnig/lock" > "$W/holder" &
+holder=$!
+for _ in $(seq 100); do [[ -s $W/holder ]] && break; sleep 0.1; done
+rc=0; ORDNIG_SRC=$S ordnig sort > "$W/sort-locked.txt" 2>&1 || rc=$?
+kill "$holder"; wait "$holder" 2>/dev/null || true
+[[ $rc == 3 ]] || { cat "$W/sort-locked.txt"; fail "sort while locked: exit $rc, expected 3"; }
+
+rc=0; ORDNIG_SRC=$S ordnig sort --apply > "$W/sort.txt" || rc=$?
+[[ $rc == 4 ]] || { cat "$W/sort.txt"; fail "sort --apply: exit $rc, expected 4"; }
 for f in Versicherung/beitrag.pdf Steuer/2026/beitrag.pdf Bank/2026/auszug.pdf Bank/2026/scan.png 00_Eingang/_Prüfen/doppelt.pdf 00_Eingang/_Prüfen/archiv.zip; do
   [[ -s $S/$f ]] || { cat "$W/sort.txt" "$ORDNIG_OUT"/*-sort.csv; fail "sort: missing $f"; }
 done
 [[ -z $(find "$S/00_Eingang" -maxdepth 1 -type f) ]] || fail "sort left files in the inbox"
-for f in texte.json.gz protokoll.csv; do
+for f in texte.json.gz protokoll.csv version.json; do
   [[ -s $S/00_Eingang/.ordnig/$f ]] || fail "sort: missing 00_Eingang/.ordnig/$f"
 done
 ORDNIG_SRC=$S ordnig sort --eval | grep -q 'Jahr richtig' || fail "sort --eval"
+
+# verify: a changed file is exit code 1 (for cron/systemd)
+echo x >> "$ORDNIG_SRC/Briefe/konto.xls"
+rc=0; ordnig verify > /dev/null || rc=$?
+[[ $rc == 1 ]] || fail "verify with a changed file: exit $rc, expected 1"
 
 echo "--- migration log (newest row per target)"
 awk -F, 'NR>1 {k=$2 FS $3; row[k]=$2 FS $4 FS $5 FS $6 FS $8} END {for (k in row) print row[k]}' "$log" | sort
