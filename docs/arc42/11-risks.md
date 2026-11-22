@@ -1,14 +1,8 @@
 # 11 Risks and technical debt
 
-<a id="q1"></a>
-> [!IMPORTANT]
-> **Q1 – Base image end of life:** The image is built on Ubuntu 25.10, an interim release that reached end of life on
-> 9 July 2026: no security updates since, so `apt-get upgrade` at build time no longer
-> helps, and Dependabot only updates the digest of the same tag. Move to Ubuntu 26.04
-> LTS (supported for five years) in its own PR?
-
 | Risk | Effect | Mitigation |
 | --- | --- | --- |
+| Base image reaches end of life | No security updates | Ubuntu LTS only; Dependabot proposes the next one ([ADR](adr/ADR-20261114-distribution-packages-lean-image.md)). |
 | veraPDF ships only a "latest" installer | Build not reproducible | Versions recorded per build (`ordnig version`), smoke test requires 2u. |
 | OCR quality of old scans | Wrong or missing text, misfiled mail | `--fix-scans`; `_Prüfen` below thresholds; `--eval` before production. |
 | Lock on a mount without POSIX locks | Two runs at once | See [Q3](07-deployment.md#q3). |
