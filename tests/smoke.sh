@@ -70,6 +70,45 @@ grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify r
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 
+# ---------------------------------------------------------------- sort: inbox -> archive
+S=$W/sort/ablage
+mkdir -p "$S/Bank/2025" "$S/Versicherung" "$S/Steuer" "$S/00_Eingang/.ordnig" "$W/sortgen"
+cd "$W/sortgen"
+bank="Deutsche Kreditbank AG Kontoauszug Girokonto Buchungen Lastschrift Gutschrift Saldo Kontonummer 1234567"
+vers="Hausratversicherung Versicherungsschein Beitragsrechnung Versicherungsnummer 7766554 Ihre Police Schaden"
+for i in 1 2 3 4; do
+  printf '%s\nDatum 0%s.03.2025\nBrief %s\n' "$bank" "$i" "$i" > "konto$i.txt"
+  printf '%s\nSchreiben %s mit freundlichen Grüßen\n' "$vers" "$i" > "vers$i.txt"
+done
+printf '%s\nDatum 03.11.2026\n' "$bank" > neu.txt
+printf '%s\nJahresbeitrag Datum 05.01.2026\n' "$vers" > jahr.txt
+soffice --headless --convert-to pdf konto*.txt vers*.txt neu.txt jahr.txt >/dev/null
+mv konto*.pdf "$S/Bank/2025/"; mv vers*.pdf "$S/Versicherung/"
+cp neu.pdf "$S/00_Eingang/auszug.pdf"
+cp jahr.pdf "$S/00_Eingang/beitrag.pdf"
+cat > "$S/00_Eingang/.ordnig/regeln.toml" <<'EOF'
+[[regel]]
+name = "Jahresbeitrag"
+ziel = "Versicherung"
+alle = ['Hausratversicherung', 'Jahresbeitrag']
+kopie = "Steuer/{jahr}"
+EOF
+gs -q -dNOPAUSE -dBATCH -sDEVICE=pnggray -r300 -o "$S/00_Eingang/scan.png" neu.pdf
+cp "$S/Bank/2025/konto1.pdf" "$S/00_Eingang/doppelt.pdf"
+printf 'PK\005\006%018d' 0 > "$S/00_Eingang/archiv.zip"
+
+ORDNIG_SRC=$S ordnig sort > "$W/sort-preview.txt"
+[[ -e $S/00_Eingang/auszug.pdf && ! -e $S/Bank/2026 ]] || fail "sort preview moved files"
+ORDNIG_SRC=$S ordnig sort --apply > "$W/sort.txt" || { cat "$W/sort.txt"; fail "sort --apply"; }
+for f in Versicherung/beitrag.pdf Steuer/2026/beitrag.pdf Bank/2026/auszug.pdf Bank/2026/scan.png 00_Eingang/_Prüfen/doppelt.pdf 00_Eingang/_Prüfen/archiv.zip; do
+  [[ -s $S/$f ]] || { cat "$W/sort.txt" "$ORDNIG_OUT"/*-sort.csv; fail "sort: missing $f"; }
+done
+[[ -z $(find "$S/00_Eingang" -maxdepth 1 -type f) ]] || fail "sort left files in the inbox"
+for f in texte.json.gz protokoll.csv; do
+  [[ -s $S/00_Eingang/.ordnig/$f ]] || fail "sort: missing 00_Eingang/.ordnig/$f"
+done
+ORDNIG_SRC=$S ordnig sort --eval | grep -q 'Jahr richtig' || fail "sort --eval"
+
 echo "--- migration log (newest row per target)"
 awk -F, 'NR>1 {k=$2 FS $3; row[k]=$2 FS $4 FS $5 FS $6 FS $8} END {for (k in row) print row[k]}' "$log" | sort
 echo "SMOKE TEST OK"
