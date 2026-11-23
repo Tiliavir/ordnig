@@ -19,15 +19,11 @@ flowchart LR
 | Scheduler (optional) | systemd timer, cron, NAS task scheduler; acts on the exit code ([8](08-concepts.md#exit-codes)). Notifying the owner is its job. |
 
 **Out of scope:** backup and restore (`verify` detects damage, a versioned backup
-repairs it), editing documents, renaming files, fetching documents from elsewhere.
+repairs it), editing documents, renaming files, fetching documents from elsewhere
+(portal logins and credentials stay out of ordnig; any tool or person can drop files
+into the inbox).
 
-<a id="q11"></a>
-> [!IMPORTANT]
-> **Q11 – HEIC and Outlook .msg:** `sort` cannot read HEIC photos or Outlook `.msg` files; they go to the review folder.
-> Both are common for scanned or forwarded mail (phone photos, Outlook). Support them next?
+Not read yet: HEIC photos ([#13](https://github.com/Tiliavir/ordnig/issues/13)) and
+Outlook `.msg` ([#14](https://github.com/Tiliavir/ordnig/issues/14)); both need a new
+package and go to the review folder until then.
 
-<a id="q12"></a>
-> [!IMPORTANT]
-> **Q12 – Fetching documents:** Fetching documents from provider portals (banks, insurers) would feed the inbox. As
-> part of ordnig it needs logins and per-portal code, which ordnig avoids so far. Keep
-> it out of scope (a separate tool that writes into the inbox), or plan it in?
