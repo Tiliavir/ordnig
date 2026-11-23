@@ -213,11 +213,17 @@ def sha256(path, bufsize=1 << 20):
     return h.hexdigest()
 
 # ---------------------------------------------------------------- Scan
-def scan(root: Path, args):
+def in_skip(p: Path, skip):
+    return any(p == s or s in p.parents for s in skip)
+
+def scan(root: Path, args, skip=()):
+    """skip: absolute Ordner, die nicht geprüft werden (der Eingang: noch nicht abgelegte Post)."""
+    skip = {Path(s) for s in skip}
     files, empty_dirs, dir_errors = [], [], []
     case_map = defaultdict(list)
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: dir_errors.append(str(e))):
-        dirnames[:] = [d for d in dirnames if not d.startswith("@eaDir") and d not in ("#recycle", ".ordnig")]  # Synology, eigene Daten
+        dirnames[:] = [d for d in dirnames if not d.startswith("@eaDir") and d not in ("#recycle", ".ordnig")  # Synology, eigene Daten
+                       and Path(dirpath) / d not in skip]
         if not dirnames and not filenames:
             empty_dirs.append(os.path.relpath(dirpath, root))
         lower = Counter(n.lower() for n in filenames + dirnames)
@@ -357,7 +363,9 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     progress(f"Scanne {root} …")
-    paths, empty_dirs, dir_errors, case_map = scan(root, args)
+    inbox = state.find_inbox(root, args.eingang)
+    skip = [inbox] if inbox and inbox != root else []
+    paths, empty_dirs, dir_errors, case_map = scan(root, args, skip)
     progress(f"{num(len(paths))} Dateien, erkenne Typen …")
     mimes = detect_mimes(paths)
 
@@ -449,7 +457,9 @@ def main():
         old = {}
         for line in open(args.verify, encoding="utf-8", errors="surrogateescape"):
             if "  " in line:
-                h, pth = line.rstrip("\n").split("  ", 1); old[pth] = h
+                h, pth = line.rstrip("\n").split("  ", 1)
+                if not in_skip(root / pth, skip):  # ältere Manifeste enthalten noch den Eingang
+                    old[pth] = h
         changed = [p for p, h in old.items() if p in cur and cur[p] and cur[p] != h]
         missing = [p for p in old if p not in cur]
         new = [p for p in cur if p not in old and cur[p]]

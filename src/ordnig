@@ -14,7 +14,7 @@ ordnig – checks an old file archive and adds archival copies next to the origi
 
   preview            (default) report + list of planned conversions. Changes nothing.
   run [opts]         report, convert, report again, store fresh checksums.
-  check              report only.
+  check              report only. Skips the inbox, like run and verify.
   verify             compare against the last checksums ($OUT/manifest.sha256).
   sort [opts]        file the inbox (00_Eingang) into the archive. Preview unless --apply.
   version            versions of ordnig and the bundled tools.
