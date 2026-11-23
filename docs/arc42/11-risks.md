@@ -6,7 +6,7 @@
 | veraPDF ships only a "latest" installer | Build not reproducible | Versions recorded per build (`ordnig version`), smoke test requires 2u. |
 | OCR quality of old scans | Wrong or missing text, misfiled documents | `--fix-scans`; `_Prüfen` below thresholds; `--eval` before production. |
 | Lock on a mount without POSIX locks | Two runs at once | Documented requirement ([7](07-deployment.md)). |
-| Conversion log tied to mount paths | Repeated conversions | See [Q2](08-concepts.md#q2). |
+| Shares mounted under other names | Repeated conversions | Log paths relative to the archive; names are part of the contract ([ADR](adr/ADR-20261123-log-paths-relative-to-archive.md)). |
 
 ## Known limits
 
