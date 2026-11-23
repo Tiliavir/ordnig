@@ -28,7 +28,8 @@ Aufruf:
   python3 ablage_migrate.py /ablage --apply --images tif,tiff --lang deu+eng -j 4
 Das Protokoll liegt in <eingang>/.ordnig/migration_log.csv (ohne Eingang in
 <ablage>/.ordnig/); Wiederholungsläufe überspringen Erledigtes und machen bei
-Fehlern weiter. Ein Protokoll am alten Ort wird beim nächsten --apply übernommen.
+Fehlern weiter. Pfade darin sind relativ zur Ablage (Format 2), damit sie jede
+Mount-Anordnung überstehen. Ein Protokoll am alten Ort wird beim nächsten --apply übernommen.
 Der Eingang wird nicht umgewandelt: sort legt die Post ab, der nächste Lauf wandelt
 sie dann am Zielort um.
 """
@@ -49,7 +50,7 @@ ODF_FOR = {**{e: "odt" for e in TEXT - {"txt"}}, **{e: "ods" for e in CALC - {"d
            **{e: "odp" for e in IMPRESS}}
 PDF_FILTER = {"odt": "writer_pdf_Export", "ods": "calc_pdf_Export", "odp": "impress_pdf_Export"}
 SKIP_DIRS = {"@eaDir", "#recycle", ".git", ".ordnig"}
-LOG_NAME = "migration_log.csv"
+LOG_NAME = state.LOG_NAME
 LOG_FIELDS = ["quelle", "aktion", "ziel", "status", "pdfa", "hinweis", "zeit", "sekunden"]
 VERA_BATCH = 50
 
@@ -483,9 +484,9 @@ def main():
     done, generated = set(), set()
     for log in [p for p in (old_log, args.log) if p and p.exists()]:
         for r in csv.DictReader(open(log, encoding="utf-8")):
-            if r["ziel"]: generated.add(r["ziel"])
+            if r["ziel"]: generated.add(state.to_abs(r["ziel"], root))
             if r["aktion"] == "pdfa" and r["status"] in ("ok", "warnung", "übersprungen"):
-                done.add(r["quelle"])
+                done.add(state.to_abs(r["quelle"], root))
     images = {e.strip().lower().lstrip(".") for e in args.images.split(",") if e.strip()}
     progress("Plane …")
     info = {}
@@ -531,10 +532,11 @@ def main():
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
 
     t_start = time.monotonic()
-    state.open_state(args.log.parent)
+    state.open_state(args.log.parent, root)
     for log in (old_log, args.log):
         if log and log.exists():
             upgrade_log(log)
+            state.relativize_log(log, root)
     if old_log:
         state.adopt(root, args.log.parent, LOG_NAME)
     new_log = not args.log.exists()
@@ -542,6 +544,7 @@ def main():
     with open(args.log, "a", newline="", encoding="utf-8") as lf:
         w = csv.DictWriter(lf, fieldnames=LOG_FIELDS)
         if new_log: w.writeheader()
+        put = lambda r: w.writerow({**r, **{k: state.to_rel(r[k], root) for k in state.LOG_PATHS}})
         with ProcessPoolExecutor(max_workers=args.jobs) as ex:
             futs = {ex.submit(process, j, args.lang, args.fix_scans, ocr_jobs, has_vera): j for j in jobs}
             for i, f in enumerate(as_completed(futs), 1):
@@ -552,7 +555,7 @@ def main():
                     rows = [dict(quelle=str(j[1]), aktion="pdfa", ziel="", status="fehler", pdfa="", hinweis=str(e),
                                  zeit=time.strftime("%Y-%m-%d %H:%M:%S"), sekunden="")]
                 for r in rows:
-                    w.writerow(r); results[r["quelle"]].append(r)
+                    put(r); results[r["quelle"]].append(r)
                 lf.flush()
                 progress(f"Migriere {i}/{len(jobs)}: {j[1].name}")
 
@@ -571,7 +574,7 @@ def main():
                 r["hinweis"] = "; ".join(filter(None, [r["hinweis"].replace("veraPDF-Prüfung ausstehend", "").strip("; "), vhint]))
                 r["sekunden"] = f"{float(r['sekunden'] or 0) + per_file:.1f}"
                 r["zeit"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                w.writerow(r)      # neuere Zeile gilt
+                put(r)      # neuere Zeile gilt
             lf.flush()
     progress_done()
     wall = time.monotonic() - t_start

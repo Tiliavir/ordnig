@@ -15,14 +15,16 @@ weil der Container auf verschiedenen Rechnern und in verschiedenen Versionen lä
 Ablage ohne Eingang behält ihn im Wurzelordner. Er hält eine Sperre (lock) und seine
 Formatversion (version.json).
 """
-import fcntl, json, os, shutil, socket, sys, time
+import csv, fcntl, json, os, shutil, socket, sys, time
 from pathlib import Path
 
 OK, FEHLER, SETUP, GESPERRT, PRUEFEN = 0, 1, 2, 3, 4
 
 INBOX, STATE = "00_Eingang", ".ordnig"
-FORMAT = 1               # Aufbau der .ordnig-Ordner; bei jeder inkompatiblen Änderung +1
-MIGRATIONS = {}          # {alte Version: Funktion(ordner)} hebt einen Ordner um eine Version an
+FORMAT = 2               # Aufbau der .ordnig-Ordner; bei jeder inkompatiblen Änderung +1
+MIGRATIONS = {}          # {alte Version: Funktion(ordner, ablage)} hebt einen Ordner um eine Version an
+LOG_NAME = "migration_log.csv"
+LOG_PATHS = ("quelle", "ziel")
 
 _held = []               # offene Sperren bis Prozessende (die Sperre hängt am Dateideskriptor)
 
@@ -84,12 +86,12 @@ def adopt(root: Path, folder: Path, name: str):
     print(f"{old} übernommen nach {new}", file=sys.stderr)
 
 
-def open_state(folder: Path):
+def open_state(folder: Path, root: Path = None):
     """Legt den Ordner an, sperrt ihn für diesen Prozess und prüft bzw. schreibt die Formatversion.
     Bricht mit Exit-Code 3 ab, wenn ein anderer Lauf ihn hält, mit 2 bei neuerer Formatversion."""
     folder.mkdir(parents=True, exist_ok=True)
     lock(folder / "lock")
-    check_format(folder)
+    check_format(folder, root)
 
 
 def lock(path: Path):
@@ -110,7 +112,7 @@ def lock(path: Path):
     _held.append(fd)
 
 
-def check_format(folder: Path):
+def check_format(folder: Path, root: Path = None):
     vfile = folder / "version.json"
     if not vfile.exists():
         write_format(vfile, FORMAT)
@@ -125,9 +127,53 @@ def check_format(folder: Path):
     while fmt < FORMAT:
         if fmt not in MIGRATIONS:
             stop(f"{folder}: Format {fmt} kann nicht auf {FORMAT} angehoben werden.")
-        MIGRATIONS[fmt](folder)
+        MIGRATIONS[fmt](folder, root)
         fmt += 1
         write_format(vfile, fmt)
+
+
+def to_rel(value: str, root: Path):
+    """Pfad fürs Protokoll: relativ zur Ablage, damit er jede Mount-Anordnung übersteht.
+    Absolute Pfade außerhalb der Ablage bleiben, wie sie sind (nicht zuordenbar)."""
+    if not value or not os.path.isabs(value):
+        return value
+    p = Path(value)
+    return str(p.relative_to(root)) if p.is_relative_to(root) else value
+
+
+def to_abs(value: str, root: Path):
+    """Pfad aus dem Protokoll für diesen Lauf: relativ (ab Format 2) oder absolut (älter)."""
+    return value if not value or os.path.isabs(value) else str(root / value)
+
+
+def relativize_log(log: Path, root: Path):
+    """Schreibt die Pfade eines Umwandlungsprotokolls relativ zur Ablage. -> Anzahl nicht zuordenbarer."""
+    if root is None or not log.is_file():
+        return 0
+    with open(log, encoding="utf-8", newline="", errors="surrogateescape") as f:
+        r = csv.DictReader(f); fields, rows = r.fieldnames or [], list(r)
+    stray = 0
+    for row in rows:
+        for k in LOG_PATHS:
+            if row.get(k):
+                row[k] = to_rel(row[k], root)
+                stray += os.path.isabs(row[k])
+    tmp = log.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="", errors="surrogateescape") as f:
+        w = csv.DictWriter(f, fieldnames=fields); w.writeheader(); w.writerows(rows)
+    tmp.replace(log)
+    if stray:
+        print(f"{log}: {stray} Pfade liegen nicht unter {root} und bleiben absolut "
+              f"(andere Mount-Anordnung als beim Schreiben?).", file=sys.stderr)
+    return stray
+
+
+def _format_2(folder: Path, root: Path):
+    """1 → 2: Pfade im Umwandlungsprotokoll relativ zur Ablage statt Container-Pfade."""
+    relativize_log(folder / LOG_NAME, root)
+
+
+MIGRATIONS[1] = _format_2
 
 
 def write_format(vfile: Path, fmt: int):

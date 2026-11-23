@@ -55,7 +55,7 @@ class State(unittest.TestCase):
         self.folder.mkdir()
         (self.folder / "version.json").write_text(json.dumps({"format": 0}))
         done = []
-        state.MIGRATIONS[0] = lambda f: done.append(f)
+        state.MIGRATIONS[0] = lambda f, root: done.append(f)
         try:
             state.check_format(self.folder)
         finally:
@@ -68,6 +68,34 @@ class State(unittest.TestCase):
             with self.assertRaises(SystemExit) as e:
                 state.run(main)
             self.assertEqual(e.exception.code, code)
+
+
+class LogPaths(unittest.TestCase):
+    """Format 2: the conversion log stores paths relative to the archive, not container paths."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); self.root = Path(self.dir.name) / "ablage"
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_rel_and_abs(self):
+        self.assertEqual(state.to_rel(str(self.root / "a" / "b.pdf"), self.root), "a/b.pdf")
+        self.assertEqual(state.to_rel("/elsewhere/b.pdf", self.root), "/elsewhere/b.pdf")
+        self.assertEqual(state.to_rel("", self.root), "")
+        self.assertEqual(state.to_abs("a/b.pdf", self.root), str(self.root / "a" / "b.pdf"))
+        self.assertEqual(state.to_abs("/old/b.pdf", self.root), "/old/b.pdf")
+
+    def test_format_1_is_lifted_to_relative_paths(self):
+        folder = self.root / "00_Eingang" / ".ordnig"; folder.mkdir(parents=True)
+        (folder / "version.json").write_text(json.dumps({"format": 1}))
+        (folder / state.LOG_NAME).write_text(
+            "quelle,aktion,ziel,status\n"
+            f"{self.root}/docs/a.docx,odf,{self.root}/docs/a.odt,ok\n"
+            "/other/x.pdf,pdfa,,fehler\n", encoding="utf-8")
+        state.check_format(folder, self.root)
+        self.assertEqual((folder / state.LOG_NAME).read_text(encoding="utf-8").splitlines(),
+                         ["quelle,aktion,ziel,status", "docs/a.docx,odf,docs/a.odt,ok", "/other/x.pdf,pdfa,,fehler"])
+        self.assertEqual(json.loads((folder / "version.json").read_text())["format"], 2)
 
 
 class Location(unittest.TestCase):

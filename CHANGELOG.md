@@ -12,6 +12,11 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   up as format risks, and filed mail no longer as "moved". Inbox entries in an older
   `manifest.sha256` are ignored, so the first `verify` after the update reports no
   missing files.
+- State format 2: `migration_log.csv` stores paths relative to the archive instead of
+  container paths (`/ablage/…`), so a different mount point no longer makes `run`
+  convert generated files again. The first `run` or `sort --apply` lifts an existing
+  log; paths outside the current archive stay as they are and are reported. Older
+  ordnig versions refuse a lifted folder (exit 2).
 
 ## [0.8.1] - 2026-11-22
 
