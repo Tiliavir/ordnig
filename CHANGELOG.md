@@ -4,6 +4,15 @@ All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/en/1.
 versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
+## [Unreleased]
+
+### Changed
+
+- `check` and `verify` skip the inbox like `run` does: unsorted mail no longer shows
+  up as format risks, and filed mail no longer as "moved". Inbox entries in an older
+  `manifest.sha256` are ignored, so the first `verify` after the update reports no
+  missing files.
+
 ## [0.8.1] - 2026-11-22
 
 ### Changed

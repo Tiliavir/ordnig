@@ -97,6 +97,41 @@ class Tree(unittest.TestCase):
         self.assertTrue(out[-1].startswith("└── a.txt"))
 
 
+class Inbox(unittest.TestCase):
+    """check and verify skip the inbox: unsorted mail is neither checked nor counted as new/moved."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); d = Path(self.dir.name)
+        self.root, self.out = d / "ablage", d / "report"
+        (self.root / "home" / "00_Eingang").mkdir(parents=True)
+        (self.root / "docs").mkdir()
+        (self.root / "docs" / "a.txt").write_text("a")
+        (self.root / "home" / "00_Eingang" / "brief.txt").write_text("b")
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def check(self, *extra):
+        import subprocess, sys
+        return subprocess.run([sys.executable, str(SRC / "check.py"), str(self.root), "--out", str(self.out),
+                               "--quiet", "--no-integrity", *extra], capture_output=True, text=True)
+
+    def manifest(self):
+        return (self.out / "manifest.sha256").read_text()
+
+    def test_scan_skips_inbox(self):
+        files, *_ = check.scan(self.root.resolve(), None, [(self.root / "home" / "00_Eingang").resolve()])
+        self.assertEqual([p.name for p in files], ["a.txt"])
+
+    def test_check_and_verify_ignore_inbox(self):
+        self.assertEqual(self.check().returncode, 0)
+        self.assertIn("docs/a.txt", self.manifest())
+        self.assertNotIn("brief.txt", self.manifest())
+        old = self.out / "old.sha256"; old.write_text(self.manifest() + "0" * 64 + "  home/00_Eingang/alt.txt\n")
+        (self.root / "home" / "00_Eingang" / "neu.txt").write_text("n")
+        r = self.check("--verify", str(old))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)   # inbox entries of an older manifest are not "missing"
+
+
 class Format(unittest.TestCase):
     def test_sizes(self):
         self.assertEqual(check.hs(0), "0 B")
