@@ -33,4 +33,3 @@ into the text or an ADR.
 | Q12 | Fetching documents: part of ordnig? | [3](03-context-and-scope.md#q12) |
 | Q14 | Rule copies reported as duplicates | [8](08-concepts.md#q14) |
 | Q15 | ADRs to accept | [9](09-decisions.md#q15) |
-| Q16 | Language of the user interface | [2](02-constraints.md#q16) |

@@ -8,11 +8,7 @@
   state lives with the archive, not in the container ([ADR](adr/ADR-20261117-state-in-the-inbox.md)).
 - Python standard library only; external tools come as Ubuntu LTS packages
   (LibreOffice, OCRmyPDF/Tesseract, Ghostscript, img2pdf) plus veraPDF.
-- Code and docs in English; user interface (reports, messages, rule keys) in German ([Q16](#q16)).
+- English throughout: code, docs and user interface (reports, messages, rule keys); folder
+  names are configuration ([ADR](adr/ADR-20261123-english-ui-configurable-folders.md)).
 - `main` only through pull requests with green checks; releases from `CHANGELOG.md`.
 
-<a id="q16"></a>
-> [!IMPORTANT]
-> **Q16 – Language of the user interface:** Reports, CLI messages, folder defaults (`00_Eingang`, `_Prüfen`) and the keys in
-> `regeln.toml` are German. That limits the product to German speakers. Keep it that way
-> for now, or plan English as the default with German as a second language?
