@@ -67,11 +67,9 @@ flowchart TD
 changed content and missing files are findings (exit 1); files found under a new
 path with the same hash count as moved, new files as new.
 
-<a id="q7"></a>
-> [!IMPORTANT]
-> **Q7 – check/verify and 00_Eingang:** `check` and `verify` scan the inbox too. Documents filed by `sort` then show up
-> as "moved", new ones as "new", and the check report lists format risks of
-> unsorted documents. Should `check` skip `00_Eingang` like `run` does?
+Like `run`, `check` and `verify` skip the inbox: unsorted documents are not part of the
+archive yet, and documents filed by `sort` count as new, not as moved. Inbox entries in an
+older manifest are ignored.
 
 ## Unattended run
 
