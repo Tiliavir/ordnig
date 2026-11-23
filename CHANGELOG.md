@@ -14,6 +14,9 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 
 ### Changed
 
+- The checksum baseline for `verify` lives in `00_Eingang/.ordnig/manifest.sha256`
+  instead of `/report`, so it travels with the archive and its backup. An existing
+  `/report/manifest.sha256` is taken over.
 - All commands skip the same system folders, now also snapshots and recycle bins of
   QNAP, NetApp/NFS, Btrfs, Windows and macOS (Synology already before).
 - Architecture documented as arc42 in `docs/arc42/` (product view, one file per ADR);

@@ -19,7 +19,7 @@ sequenceDiagram
     end
     M->>V: validate in batches of 50
     V-->>M: 2u passed → declare 2u, else keep 2b
-    E->>C: check after, store manifest.sha256
+    E->>C: check after, store checksums in .ordnig
 ```
 
 1. Office file → ODF next to it.
@@ -63,7 +63,7 @@ flowchart TD
 
 ## Bit rot (`verify`)
 
-`check --verify` hashes everything again and compares with `/report/manifest.sha256`:
+`verify` hashes everything again and compares with `.ordnig/manifest.sha256` (written by `run`, and by the first `check`):
 changed content and missing files are findings (exit 1); files found under a new
 path with the same hash count as moved, new files as new.
 

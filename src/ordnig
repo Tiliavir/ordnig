@@ -15,7 +15,7 @@ ordnig – checks an old file archive and adds archival copies next to the origi
   preview            (default) report + list of planned conversions. Changes nothing.
   run [opts]         report, convert, report again, store fresh checksums.
   check              report only.
-  verify             compare against the last checksums ($OUT/manifest.sha256).
+  verify             compare against the stored checksums (<inbox>/.ordnig/manifest.sha256).
   sort [opts]        file the inbox (00_Eingang) into the archive. Preview unless --apply.
   version            versions of ordnig and the bundled tools.
 
@@ -36,7 +36,7 @@ Exit codes: 0 done · 1 errors in single files (sort, run) or changed/missing fi
 (verify) · 2 wrong call or setup (not mounted, read-only, bad regeln.toml, data from a
 newer version) · 3 another run holds the lock · 4 sort: files wait in _Prüfen
 
-State between runs (rules, learned texts, conversion log, lock) lives in <inbox>/.ordnig/;
+State between runs (rules, learned texts, logs, checksums, lock) lives in <inbox>/.ordnig/;
 an archive without inbox keeps it in $SRC/.ordnig/.
 
 Mounts: archive -> $SRC, reports -> $OUT
@@ -66,14 +66,33 @@ check() {   # $1 = label, $2 = console title, rest = extra args
   LAST_CHECK=$dir
 }
 
+# Checksum baseline for verify: state, so it lives with the archive (and its backup), not on
+# the host. Each check also leaves its own copy in its report folder.
+baseline() {
+  local dir
+  dir=$("${PY[@]}" "$LIB/state.py" dir "$SRC" "${INBOX[@]}") || exit 2
+  BASELINE=$dir/manifest.sha256
+  if [[ ! -f $BASELINE && -f $OUT/manifest.sha256 ]]; then   # up to 0.8 it lived in /report
+    if mkdir -p "$dir" 2>/dev/null && cp "$OUT/manifest.sha256" "$BASELINE.tmp" 2>/dev/null; then
+      mv "$BASELINE.tmp" "$BASELINE"; echo "Prüfsummen übernommen: $OUT/manifest.sha256 → $BASELINE" >&2
+    else
+      BASELINE=$OUT/manifest.sha256                           # archive read-only: read the old one
+    fi
+  fi
+}
+
 store_manifest() {
-  if [[ -f $LAST_CHECK/manifest.sha256 ]]; then
-    cp "$LAST_CHECK/manifest.sha256" "$OUT/manifest.sha256"
+  [[ -f $LAST_CHECK/manifest.sha256 ]] || return 0
+  if mkdir -p "$(dirname "$BASELINE")" 2>/dev/null && cp "$LAST_CHECK/manifest.sha256" "$BASELINE.tmp" 2>/dev/null; then
+    mv "$BASELINE.tmp" "$BASELINE"
+  else
+    echo "Prüfsummen nicht gespeichert: $(dirname "$BASELINE") nicht beschreibbar (Ablage :ro?)" >&2
   fi
 }
 
 cmd=${1:-preview}; [[ $# -gt 0 ]] && shift
 inbox_arg "$@"
+case $cmd in check|run|verify) need_dirs; baseline ;; esac
 case $cmd in
   preview)
     need_dirs
@@ -94,11 +113,11 @@ case $cmd in
     exit "$rc"
     ;;
   check)
-    need_dirs; check check "Prüfung" "$@"; [[ -f $OUT/manifest.sha256 ]] || store_manifest ;;
+    need_dirs; check check "Prüfung" "$@"; [[ -f $BASELINE ]] || store_manifest ;;
   verify)
     need_dirs
-    [[ -f $OUT/manifest.sha256 ]] || { echo "No $OUT/manifest.sha256 yet – run 'check' or 'run' first" >&2; exit 2; }
-    check verify "Bitrot-Prüfung" --verify "$OUT/manifest.sha256"
+    [[ -f $BASELINE ]] || { echo "No $BASELINE yet – run 'check' or 'run' first" >&2; exit 2; }
+    check verify "Bitrot-Prüfung" --verify "$BASELINE"
     ;;
   sort)
     need_dirs

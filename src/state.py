@@ -147,6 +147,17 @@ def write_format(vfile: Path, fmt: int):
     tmp.replace(vfile)
 
 
+def main_cli():
+    """Für das Startskript: `state.py dir <ablage> [--eingang PFAD]` gibt den .ordnig-Ordner aus."""
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["dir"])
+    ap.add_argument("root", type=Path)
+    ap.add_argument("--eingang", type=Path, default=None)
+    a = ap.parse_args()
+    print(state_dir(a.root.resolve(), a.eingang))
+
+
 def stop(msg, code=SETUP):
     print(msg, file=sys.stderr)
     raise SystemExit(code)
@@ -163,3 +174,7 @@ def run(main):
         else:
             code = e.code
     sys.exit(code or OK)
+
+
+if __name__ == "__main__":
+    run(main_cli)

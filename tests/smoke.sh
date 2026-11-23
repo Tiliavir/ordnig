@@ -68,6 +68,8 @@ ordnig run --images png >/dev/null
 ordnig verify >/dev/null
 grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
 [[ -s $ORDNIG_SRC/.ordnig/version.json ]] || fail "run: missing .ordnig/version.json"
+[[ -s $ORDNIG_SRC/.ordnig/manifest.sha256 ]] || fail "run: checksums not stored in .ordnig"
+[[ ! -e $ORDNIG_OUT/manifest.sha256 ]] || fail "run: checksums stored in /report"
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 
@@ -130,6 +132,12 @@ ORDNIG_SRC=$S ORDNIG_OUT=$W/check-sort ordnig check > /dev/null
 rep=$(echo "$W"/check-sort/*-check/report.md)
 grep 'beitrag.pdf' "$rep" | grep -q 'gewollte Kopie (Regel)' || fail "check: rule copy not marked as intended"
 ! grep 'beitrag.pdf' "$rep" | grep -q 'Duplikat (Gruppe' || fail "check: rule copy reported as duplicate"
+
+# verify takes over a baseline from /report (up to 0.8)
+mv "$ORDNIG_SRC/.ordnig/manifest.sha256" "$ORDNIG_OUT/manifest.sha256"
+ordnig verify > /dev/null 2> "$W/adopt.txt" || { cat "$W/adopt.txt"; fail "verify with the old baseline"; }
+[[ -s $ORDNIG_SRC/.ordnig/manifest.sha256 ]] || fail "old baseline not taken over"
+grep -q übernommen "$W/adopt.txt" || fail "taking over the old baseline not reported"
 
 # verify: a changed file is exit code 1 (for cron/systemd)
 echo x >> "$ORDNIG_SRC/Briefe/konto.xls"

@@ -30,3 +30,4 @@ One file per decision in [`adr/`](adr/).
 | 2026-11-18 | [Mount guard via the cache](adr/ADR-20261118-mount-guard-via-cache.md) | Proposed |
 | 2026-11-19 | [`run` skips the inbox](adr/ADR-20261119-run-skips-the-inbox.md) | Proposed |
 | 2026-11-22 | [Intended copies recognised by hash](adr/ADR-20261122-intended-copies-by-hash.md) | Proposed |
+| 2026-11-23 | [Checksums in the state folder](adr/ADR-20261123-checksums-in-the-state-folder.md) | Proposed |
