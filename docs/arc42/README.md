@@ -28,6 +28,5 @@ into the text or an ADR.
 | Q2 | Conversion log stores container paths | [8](08-concepts.md#q2) |
 | Q7 | `check`/`verify` also scan `00_Eingang` | [6](06-runtime-view.md#q7) |
 | Q8 | Thresholds for `sort` | [8](08-concepts.md#q8) |
-| Q9 | LLM fallback | [4](04-solution-strategy.md#q9) |
 | Q14 | Rule copies reported as duplicates | [8](08-concepts.md#q14) |
 | Q15 | ADRs to accept | [9](09-decisions.md#q15) |

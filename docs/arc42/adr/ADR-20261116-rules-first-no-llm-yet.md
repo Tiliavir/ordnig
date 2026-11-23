@@ -8,4 +8,4 @@ The first matching rule wins; otherwise similarity decides. An LLM fallback come
 
 ## Why
 
-Rules are predictable like mail filters; an LLM adds cost and data flow without proven need. See [Q9](../04-solution-strategy.md#q9).
+Rules are predictable like mail filters; an LLM adds cost and data flow without proven need. Out of scope for now: [#15](https://github.com/Tiliavir/ordnig/issues/15).

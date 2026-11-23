@@ -12,8 +12,4 @@
 
 Order of decisions for incoming documents: **rules → similarity → `_Prüfen`**.
 
-<a id="q9"></a>
-> [!IMPORTANT]
-> **Q9 – LLM fallback:** Planned only if `sort --eval` and real use show too many files in the review folder.
-> If it comes: local model only (personal documents never leave the owner's hardware),
-> or a configurable provider where a cloud API is one option?
+An LLM fallback is out of scope for now ([#15](https://github.com/Tiliavir/ordnig/issues/15)).
