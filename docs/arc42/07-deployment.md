@@ -32,6 +32,7 @@ Requirements:
 
 - **Locks across machines:** the storage must support POSIX locks (local disk,
   NFS with lockd, SMB/cifs without `nobrl`); otherwise two hosts may run at once.
+  ordnig warns when its state folder lies on a cifs mount with `nobrl`.
 - **Checksum baseline:** `/report/manifest.sha256` must be kept outside the archive
   and backed up; without it `verify` has nothing to compare with.
 - **Same mount names every run:** the mount point may change, the names below it may not ([ADR](adr/ADR-20261123-log-paths-relative-to-archive.md)).
