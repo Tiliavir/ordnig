@@ -26,11 +26,8 @@ A log at the old place (`<archive>/.ordnig/`, up to 0.7) is read and taken over 
 the next `run`; the original stays as `….übernommen`. A newer ordnig lifts an older
 format step by step; an older ordnig refuses a newer one (exit 2).
 
-<a id="q2"></a>
-> [!IMPORTANT]
-> **Q2 – Container paths in the conversion log:** `migration_log.csv` stores paths as the container sees them (`/ablage/share2/…`).
-> Mounted differently, `run` no longer recognises generated files and may convert them
-> again. Store paths relative to the archive root instead (format 2, with a migration)?
+Paths in `migration_log.csv` are relative to the archive root, so the log survives any
+mount point ([ADR](adr/ADR-20261123-log-paths-relative-to-archive.md)).
 
 <a id="exit-codes"></a>
 ## Exit codes

@@ -25,7 +25,6 @@ into the text or an ADR.
 
 | Q | Topic | Chapter |
 | --- | --- | --- |
-| Q2 | Conversion log stores container paths | [8](08-concepts.md#q2) |
 | Q8 | Thresholds for `sort` | [8](08-concepts.md#q8) |
 | Q14 | Rule copies reported as duplicates | [8](08-concepts.md#q14) |
 | Q15 | ADRs to accept | [9](09-decisions.md#q15) |
