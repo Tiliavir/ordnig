@@ -671,7 +671,7 @@ def main():
     missing = [t for t in ("gs", "tesseract", "soffice") if not shutil.which(t)]
     if missing:
         sys.exit(f"Fehlende Programme: {', '.join(missing)}")
-    state.open_state(eingang / STATE)
+    state.open_state(eingang / STATE, root)
     cfg_path = eingang / STATE / "regeln.toml"
     cfg = load_config(cfg_path, root)
     today = date.today()

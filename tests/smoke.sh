@@ -54,6 +54,7 @@ gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Briefe/kuendigung.pd
 log=$ORDNIG_SRC/.ordnig/migration_log.csv
 grep -q ',fehler,' "$log" && { cat "$log"; fail "conversion errors"; }
 grep -q 'Einzelprüfung' "$log" && { cat "$log"; fail "veraPDF batch output not parsed"; }
+grep -q "$ORDNIG_SRC/" "$log" && { cat "$log"; fail "log stores container paths, not paths relative to the archive"; }
 if command -v verapdf >/dev/null; then
   # newest row per target wins (pending row first, verdict appended after the veraPDF batch)
   bad=$(awk -F, '$2=="pdfa" {last[$3]=$0; v[$3]=$5} END {for (k in v) if (v[k] != "2u") print last[k]}' "$log")

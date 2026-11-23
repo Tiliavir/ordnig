@@ -374,8 +374,9 @@ def main():
     log = state.state_dir(root, args.eingang) / "migration_log.csv"
     for log in [p for p in (state.legacy(root, log.parent, log.name), log) if p and p.exists()]:
         for r in csv.DictReader(open(log, encoding="utf-8", errors="surrogateescape")):
-            if r["status"] == "ok" and r["ziel"] and Path(r["ziel"]).exists():
-                migrated[os.path.relpath(r["quelle"], root)].append(Path(r["ziel"]).name)
+            ziel = state.to_abs(r["ziel"], root)
+            if r["status"] == "ok" and ziel and Path(ziel).exists():
+                migrated[os.path.relpath(state.to_abs(r["quelle"], root), root)].append(Path(ziel).name)
 
     rows, hashes = [], {}
     now = time.time()

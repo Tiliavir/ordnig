@@ -57,6 +57,23 @@ class Plan(unittest.TestCase):
         self.assertNotIn("Briefe/y.pdf", names)
 
 
+    def test_relative_log_survives_another_mount_point(self):
+        """Generated files are recognised wherever the archive is mounted (log format 2)."""
+        import subprocess, sys
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "anywhere"; (root / "docs").mkdir(parents=True)
+            (root / "docs" / "brief.docx").write_text("x"); (root / "docs" / "brief.odt").write_text("y")
+            state = root / "00_Eingang" / ".ordnig"; state.mkdir(parents=True)
+            (state / "migration_log.csv").write_text(
+                "quelle,aktion,ziel,status,pdfa,hinweis,zeit,sekunden\n"
+                "docs/brief.docx,odf,docs/brief.odt,ok,,,2026-11-23 10:00:00,1\n", encoding="utf-8")
+            report = Path(d) / "plan.md"
+            subprocess.run([sys.executable, str(SRC / "migrate.py"), str(root), "--report", str(report)],
+                           capture_output=True, text=True)
+            self.assertIn("brief.docx", report.read_text())
+            self.assertNotIn("brief.odt", report.read_text())   # generated, not planned again
+
+
 class Suggest(unittest.TestCase):
     def test_tiff_is_suggested_photos_only_hinted(self):
         from collections import Counter
