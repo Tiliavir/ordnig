@@ -131,6 +131,23 @@ class Inbox(unittest.TestCase):
         r = self.check("--verify", str(old))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)   # inbox entries of an older manifest are not "missing"
 
+    def test_rule_copies_are_intended_duplicates(self):
+        (self.root / "steuer").mkdir()
+        for rel in ("docs/rechnung.pdf", "steuer/rechnung.pdf"):
+            (self.root / rel).write_text("same")
+        (self.root / "docs" / "zufall.txt").write_text("a")            # same as docs/a.txt: not intended
+        state = self.root / "home" / "00_Eingang" / ".ordnig"; state.mkdir()
+        (state / "protokoll.csv").write_text(
+            "datei,status,nach,kopien,quelle,grund,vorschlag,zeit\n"
+            "rechnung.pdf,abgelegt,docs/rechnung.pdf,steuer/rechnung.pdf,regel,Regel x,,2026-11-24\n", encoding="utf-8")
+        self.assertEqual(self.check().returncode, 0)
+        dups = (self.out / "duplicates.csv").read_text().splitlines()
+        self.assertIn("docs/rechnung.pdf,ja", "\n".join(dups))
+        self.assertTrue(any(l.endswith("docs/zufall.txt,") for l in dups))
+        report = (self.out / "report.md").read_text()
+        self.assertIn("1 Gruppen, ", report.split("### Duplikate")[1].split("###")[0])
+        self.assertIn("`docs/rechnung.pdf` = `steuer/rechnung.pdf`", report.split("### Gewollte Duplikate")[1])
+
 
 class Format(unittest.TestCase):
     def test_sizes(self):

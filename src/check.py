@@ -16,7 +16,7 @@ Ausgabe (im Ordner --out, Standard ./ablage_report):
   report.md          Zusammenfassung mit Befunden
   files.csv          eine Zeile pro Datei (Pfad, Größe, Datum, Typ, Risiko, Befunde)
   manifest.sha256    Prüfsummen (sha256sum-kompatibel) für spätere Fixity-Checks
-  duplicates.csv     Gruppen identischer Dateien
+  duplicates.csv     Gruppen identischer Dateien (gewollt = Regel-Kopien von sort)
 """
 import argparse, csv, re, hashlib, os, shutil, subprocess, sys, time, unicodedata, zipfile
 from collections import Counter, defaultdict
@@ -212,6 +212,29 @@ def sha256(path, bufsize=1 << 20):
             h.update(chunk)
     return h.hexdigest()
 
+# ---------------------------------------------------------------- Regel-Kopien
+def rule_copies(inbox):
+    """Dateien, die sort per Regel (kopie) mehrfach abgelegt hat: je Ablage die Menge
+    relativer Pfade {nach, kopien…}. Gleiche Inhalte darin sind gewollte Duplikate."""
+    log = inbox / ".ordnig" / "protokoll.csv" if inbox else None
+    if not log or not log.is_file():
+        return []
+    sets = []
+    with open(log, encoding="utf-8", newline="", errors="surrogateescape") as f:
+        for r in csv.DictReader(f):
+            if r.get("status") != "abgelegt" or not r.get("kopien"):
+                continue
+            s = {r["nach"]} | {k.removesuffix(" (schon vorhanden)") for k in r["kopien"].split(" | ") if k}
+            if len(s) > 1:
+                sets.append(frozenset(s))
+    return sets
+
+
+def intended(group, root, copy_sets):
+    rel = {str(p.relative_to(root)) for p in group}
+    return any(rel <= s for s in copy_sets)
+
+
 # ---------------------------------------------------------------- Scan
 def in_skip(p: Path, skip):
     return any(p == s or s in p.parents for s in skip)
@@ -311,6 +334,7 @@ def render_tree(root_name, rows, empty_dirs, case_map, dir_errors):
             bits.append(f"✅ {r['kind']}")
         bits += [f"⚠ {i.strip()}" for i in r["issues"].split(";") if i.strip()]
         if r.get("dup"): bits.append(f"⧉ {r['dup']}")
+        if r.get("copy"): bits.append(f"⎘ {r['copy']}")
         if r.get("info"): bits.append(f"ℹ {r['info']}")
         return " · ".join(b for b in bits if b)
 
@@ -424,7 +448,7 @@ def main():
                          ext=ext, mime=mime, risk=risk, kind=kind, issues="; ".join(issues), _p=p))
 
     # Prüfsummen (alle Dateien, fürs Manifest) – Duplikate daraus
-    dup_groups = []
+    dup_groups, copy_groups = [], []
     if not args.no_hash:
         todo = [r for r in rows if r.get("_p") is not None and r["size"] > 0]
         for i, r in enumerate(todo, 1):
@@ -435,7 +459,13 @@ def main():
         for p, h in hashes.items(): groups[h].append(p)
         dup_groups = sorted((g for g in groups.values() if len(g) > 1),
                             key=lambda g: -g[0].stat().st_size * (len(g) - 1))
+        copy_sets = rule_copies(inbox)
+        copy_groups = [g for g in dup_groups if intended(g, root, copy_sets)]
+        dup_groups = [g for g in dup_groups if not intended(g, root, copy_sets)]
         by_path = {r.get("_p"): r for r in rows}
+        for g in copy_groups:
+            for p in g:
+                by_path[p]["copy"] = "Regel-Kopie: " + ", ".join(str(q.relative_to(root)) for q in g if q != p)
         for gi, g in enumerate(dup_groups, 1):
             for p in g:
                 others = [str(q.relative_to(root)) for q in g if q != p]
@@ -445,9 +475,10 @@ def main():
                 p = r.get("_p")
                 if p in hashes: m.write(f"{hashes[p]}  {r['path']}\n")
         with open(args.out / "duplicates.csv", "w", newline="", encoding="utf-8", errors="surrogateescape") as f:
-            w = csv.writer(f); w.writerow(["gruppe", "sha256", "groesse", "pfad"])
-            for gi, g in enumerate(dup_groups, 1):
-                for p in g: w.writerow([gi, hashes[p], p.stat().st_size, str(p.relative_to(root))])
+            w = csv.writer(f); w.writerow(["gruppe", "sha256", "groesse", "pfad", "gewollt"])
+            for gi, g in enumerate(dup_groups + copy_groups, 1):
+                for p in g: w.writerow([gi, hashes[p], p.stat().st_size, str(p.relative_to(root)),
+                                        "ja" if gi > len(dup_groups) else ""])
 
     # Fixity-Verify
     vstat = None
@@ -477,7 +508,7 @@ def main():
 
     # CSV
     with open(args.out / "files.csv", "w", newline="", encoding="utf-8", errors="surrogateescape") as f:
-        w = csv.DictWriter(f, fieldnames=["path", "size", "mtime", "ext", "mime", "risk", "kind", "issues", "dup", "info"],
+        w = csv.DictWriter(f, fieldnames=["path", "size", "mtime", "ext", "mime", "risk", "kind", "issues", "dup", "info", "copy"],
                            extrasaction="ignore")
         w.writeheader(); w.writerows(rows)
 
@@ -504,7 +535,7 @@ def main():
     # Bericht: Baum, dann Zusammenfassung
     L = [f"# Ablage-Prüfung: `{root}`", "",
          f"Stand {datetime.now():%Y-%m-%d %H:%M} · {num(len(rows))} Dateien · {hs(total)} · Laufzeit {time.time()-t0:.0f}s", "",
-         "Legende: 🔴 migrieren · ☑ migriert · 🟡 beobachten · ⚪ unbekanntes Format · ⚠ Befund · ⧉ Duplikat · ℹ Hinweis. "
+         "Legende: 🔴 migrieren · ☑ migriert · 🟡 beobachten · ⚪ unbekanntes Format · ⚠ Befund · ⧉ Duplikat · ⎘ gewollte Regel-Kopie · ℹ Hinweis. "
          "Ordnerzeilen: Summen inkl. Unterordner. Zusammenfassung am Ende.", ""]
     if not shutil.which("file"):
         L += ["> Hinweis: `file` nicht gefunden – Endung-vs-Inhalt-Prüfung übersprungen.", ""]
@@ -535,6 +566,11 @@ def main():
     if dup_groups:
         L += ["", "### Duplikate", "", f"{num(len(dup_groups))} Gruppen, {hs(waste)} redundant. "
               "Im Baum mit ⧉ markiert; alle Gruppen in `duplicates.csv`."]
+    if copy_groups:
+        L += ["", "### Gewollte Duplikate", "", f"{num(len(copy_groups))} Gruppen, die `sort` per Regel (`kopie`) "
+              "mehrfach abgelegt hat. Im Baum mit ⎘ markiert, in `duplicates.csv` mit `gewollt = ja`.", ""]
+        L += [f"- " + " = ".join(f"`{q.relative_to(root)}`" for q in g) for g in copy_groups[:200]]
+        if len(copy_groups) > 200: L.append(f"- … {num(len(copy_groups) - 200)} weitere")
     if years:
         L += ["", "### Dateien nach Änderungsjahr", "", "```text"]
         mx = max(years.values())
@@ -556,6 +592,7 @@ def main():
     if len(issue_cnt) > 5: t.append((f"  … {len(issue_cnt) - 5} weitere Arten", "", ""))
     t.append(None)
     if not args.no_hash: t.append(("Duplikat-Gruppen", num(len(dup_groups)), hs(waste) + " redundant" if waste else ""))
+    if copy_groups: t.append(("  gewollt (Regel-Kopien)", num(len(copy_groups)), ""))
     t += [(k, num(v), "") for k, v in extra if v]
     if vstat:
         t += [None, ("Seit letzter Prüfung geändert", num(vstat["changed"]), ""), ("  fehlt", num(len(vstat["gone"])), ""),
