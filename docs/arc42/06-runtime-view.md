@@ -10,7 +10,7 @@ sequenceDiagram
     participant T as LibreOffice / OCRmyPDF
     participant V as veraPDF
     E->>C: check before
-    E->>M: plan (skips 00_Eingang, generated and done files)
+    E->>M: plan (skips the inbox, generated and done files)
     Note over M: preview stops here: plan + suggested options
     M->>M: lock .ordnig, take over old log
     loop one file per CPU
@@ -39,13 +39,13 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    L["learn: archive folders → classes\n(cached texts, year folders → {jahr})"] --> F
-    F[each file in 00_Eingang] --> RD[read text: PDF, OCR, office, mail, HTML]
+    L["learn: archive folders → classes\n(cached texts, year folders → {year})"] --> F
+    F[each file in the inbox] --> RD[read text: PDF, OCR, office, mail, HTML]
     RD --> R{rule matches?}
     R -- yes --> Y
     R -- no --> K{"7 nearest neighbours:\n≥ 70 % vote and similarity ≥ 0.2?"}
-    K -- yes --> Y{"year found for {jahr}?"}
-    K -- no --> P[_Prüfen + reason]
+    K -- yes --> Y{"year found for {year}?"}
+    K -- no --> P[review folder + reason]
     Y -- no --> P
     Y -- yes --> D{same content already there?}
     D -- yes --> P
@@ -56,9 +56,9 @@ flowchart TD
   as if it were new and shows coverage, accuracy and year accuracy per threshold.
 - Move across file systems: copy, fsync, compare SHA-256, then delete. Never
   overwrite; a name collision gets `_2`.
-- Copies (`kopie`, e.g. into a tax year folder) only after the original is filed, with the same
+- Copies (`copy`, e.g. into a tax year folder) only after the original is filed, with the same
   check; a failed copy is an error, the filed original stays.
-- Every `--apply` appends to `.ordnig/protokoll.csv`.
+- Every `--apply` appends to `.ordnig/sort-log.csv`.
 
 
 ## Bit rot (`verify`)
@@ -80,5 +80,5 @@ sequenceDiagram
     T->>O: start (storage mounted?)
     O->>O: mount guard, lock, format version
     O-->>T: exit 0 · 1 · 2 · 3 · 4
-    Note over T: 1/2 → look at the report, 4 → look at _Prüfen
+    Note over T: 1/2 → look at the report, 4 → look at the review folder
 ```

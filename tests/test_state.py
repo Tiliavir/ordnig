@@ -37,43 +37,44 @@ class State(unittest.TestCase):
         try:
             self.assertEqual(holder.stdout.readline().strip(), "locked")
             r = self.open_in_child()
-            self.assertEqual(r.returncode, state.GESPERRT)
-            self.assertIn("anderen ordnig-Lauf", r.stderr)
+            self.assertEqual(r.returncode, state.LOCKED)
+            self.assertIn("another ordnig run", r.stderr)
         finally:
             holder.stdin.close(); holder.wait(10); holder.stdout.close()
         self.assertEqual(self.open_in_child().returncode, 0)     # released when the holder ends
 
     def test_newer_or_broken_format_stops_with_setup_code(self):
         self.folder.mkdir()
-        for content in (json.dumps({"format": state.FORMAT + 1}), "kaputt"):
+        for content in (json.dumps({"format": state.FORMAT + 1}), "broken"):
             (self.folder / "version.json").write_text(content)
             r = self.open_in_child()
             self.assertEqual(r.returncode, state.SETUP, r.stderr)
-        self.assertIn("unlesbar", r.stderr)
+        self.assertIn("unreadable", r.stderr)
 
     def test_older_format_is_migrated_step_by_step(self):
         self.folder.mkdir()
-        (self.folder / "version.json").write_text(json.dumps({"format": 0}))
+        old = state.FORMAT - 1
+        (self.folder / "version.json").write_text(json.dumps({"format": old}))
         done = []
-        state.MIGRATIONS[0] = lambda f, root: done.append(f)
+        state.MIGRATIONS[old] = lambda f, root: done.append(f)
         try:
             state.check_format(self.folder)
         finally:
-            del state.MIGRATIONS[0]
+            del state.MIGRATIONS[old]
         self.assertEqual(done, [self.folder])
         self.assertEqual(json.loads((self.folder / "version.json").read_text())["format"], state.FORMAT)
 
     def test_run_maps_messages_to_setup_code(self):
-        for main, code in ((lambda: None, 0), (lambda: state.PRUEFEN, 4), (lambda: sys.exit("Ablage fehlt"), 2)):
+        for main, code in ((lambda: None, 0), (lambda: state.REVIEW, 4), (lambda: sys.exit("Archive missing"), 2)):
             with self.assertRaises(SystemExit) as e:
                 state.run(main)
             self.assertEqual(e.exception.code, code)
 
 
 class LogPaths(unittest.TestCase):
-    """Format 2: the conversion log stores paths relative to the archive, not container paths."""
+    """The conversion log stores paths relative to the archive, not container paths."""
     def setUp(self):
-        self.dir = tempfile.TemporaryDirectory(); self.root = Path(self.dir.name) / "ablage"
+        self.dir = tempfile.TemporaryDirectory(); self.root = Path(self.dir.name) / "archive"
 
     def tearDown(self):
         self.dir.cleanup()
@@ -85,17 +86,27 @@ class LogPaths(unittest.TestCase):
         self.assertEqual(state.to_abs("a/b.pdf", self.root), str(self.root / "a" / "b.pdf"))
         self.assertEqual(state.to_abs("/old/b.pdf", self.root), "/old/b.pdf")
 
-    def test_format_1_is_lifted_to_relative_paths(self):
-        folder = self.root / "00_Eingang" / ".ordnig"; folder.mkdir(parents=True)
-        (folder / "version.json").write_text(json.dumps({"format": 1}))
-        (folder / state.LOG_NAME).write_text(
-            "quelle,aktion,ziel,status\n"
-            f"{self.root}/docs/a.docx,odf,{self.root}/docs/a.odt,ok\n"
-            "/other/x.pdf,pdfa,,fehler\n", encoding="utf-8")
-        state.check_format(folder, self.root)
-        self.assertEqual((folder / state.LOG_NAME).read_text(encoding="utf-8").splitlines(),
-                         ["quelle,aktion,ziel,status", "docs/a.docx,odf,docs/a.odt,ok", "/other/x.pdf,pdfa,,fehler"])
-        self.assertEqual(json.loads((folder / "version.json").read_text())["format"], 2)
+
+class NoMigration(unittest.TestCase):
+    """Before production nothing is migrated: old state folders are refused, not rewritten."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); self.folder = Path(self.dir.name) / ".ordnig"
+        self.folder.mkdir()
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_older_format_without_migration_stops(self):
+        (self.folder / "version.json").write_text(json.dumps({"format": 1}))
+        with self.assertRaises(SystemExit) as e:
+            state.check_format(self.folder)
+        self.assertEqual(e.exception.code, state.SETUP)
+
+    def test_german_state_files_stop(self):
+        (self.folder / "regeln.toml").write_text("")
+        with self.assertRaises(SystemExit) as e:
+            state.open_state(self.folder)
+        self.assertEqual(e.exception.code, state.SETUP)
 
 
 class Mounts(unittest.TestCase):
@@ -106,61 +117,51 @@ class Mounts(unittest.TestCase):
     def tearDown(self):
         self.dir.cleanup()
 
-    def warns(self, line, path="/ablage/home/00_Eingang/.ordnig/lock"):
+    def warns(self, line, path="/archive/home/Inbox/.ordnig/lock"):
         self.m.write_text("overlay / overlay rw,relatime 0 0\n" + line + "\n")
         return state.warn_local_lock(Path(path), str(self.m))
 
     def test_nobrl_warns(self):
-        self.assertTrue(self.warns("//nas/home /ablage/home cifs rw,vers=3.1.1,nobrl,cache=strict 0 0"))
+        self.assertTrue(self.warns("//nas/home /archive/home cifs rw,vers=3.1.1,nobrl,cache=strict 0 0"))
 
     def test_cifs_with_locks_local_disk_and_other_mounts_do_not(self):
-        self.assertFalse(self.warns("//nas/home /ablage/home cifs rw,vers=3.1.1,cache=strict 0 0"))
-        self.assertFalse(self.warns("/dev/sda1 /ablage/home ext4 rw,nobrl 0 0"))
-        self.assertFalse(self.warns("//nas/home /ablage/homes cifs rw,nobrl 0 0"))   # prefix, not parent
+        self.assertFalse(self.warns("//nas/home /archive/home cifs rw,vers=3.1.1,cache=strict 0 0"))
+        self.assertFalse(self.warns("/dev/sda1 /archive/home ext4 rw,nobrl 0 0"))
+        self.assertFalse(self.warns("//nas/home /archive/homes cifs rw,nobrl 0 0"))   # prefix, not parent
 
     def test_longest_mount_point_wins_and_escapes(self):
-        self.m.write_text("//nas/a /ablage cifs rw,nobrl 0 0\n/dev/sdb /ablage/my\\040home ext4 rw 0 0\n")
-        self.assertEqual(state.mount_of(Path("/ablage/my home/x"), str(self.m))[0], "ext4")
-        self.assertEqual(state.mount_of(Path("/ablage/other"), str(self.m))[0], "cifs")
-        self.m.write_text("/dev/sdb /ablage/Dokumente\\040Ü ext4 rw 0 0\n")
-        self.assertEqual(state.mount_of(Path("/ablage/Dokumente Ü/x"), str(self.m))[0], "ext4")
+        self.m.write_text("//nas/a /archive cifs rw,nobrl 0 0\n/dev/sdb /archive/my\\040home ext4 rw 0 0\n")
+        self.assertEqual(state.mount_of(Path("/archive/my home/x"), str(self.m))[0], "ext4")
+        self.assertEqual(state.mount_of(Path("/archive/other"), str(self.m))[0], "cifs")
+        self.m.write_text("/dev/sdb /archive/Dokumente\\040Ü ext4 rw 0 0\n")
+        self.assertEqual(state.mount_of(Path("/archive/Dokumente Ü/x"), str(self.m))[0], "ext4")
 
 
 class Location(unittest.TestCase):
-    """One .ordnig folder for everything: in the inbox, also when shares are mounted below /ablage."""
+    """One .ordnig folder for everything: in the inbox, also when shares are mounted below /archive."""
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory(); self.root = Path(self.dir.name)
 
     def tearDown(self):
         self.dir.cleanup()
 
-    def test_inbox_in_root_or_one_share_or_none(self):
+    def test_default_inbox_or_none(self):
         self.assertEqual(state.state_dir(self.root), self.root / ".ordnig")          # no inbox
-        (self.root / "home/00_Eingang").mkdir(parents=True); (self.root / "documents").mkdir()
-        self.assertEqual(state.state_dir(self.root), (self.root / "home/00_Eingang/.ordnig").resolve())
-        (self.root / "00_Eingang").mkdir()
-        self.assertEqual(state.find_inbox(self.root), (self.root / "00_Eingang").resolve())
+        (self.root / "Inbox").mkdir()
+        self.assertEqual(state.state_dir(self.root), (self.root / "Inbox/.ordnig").resolve())
         self.assertEqual(state.find_inbox(self.root, self.root / "x"), (self.root / "x").resolve())
 
-    def test_two_shares_with_inbox_need_a_choice(self):
+    def test_any_folder_holding_ordnig_is_the_inbox(self):
+        (self.root / "Inbox").mkdir()
+        (self.root / "home/00_Eingang/.ordnig").mkdir(parents=True)                # own name, in a share
+        self.assertEqual(state.find_inbox(self.root), (self.root / "home/00_Eingang").resolve())
+
+    def test_two_inboxes_need_a_choice(self):
         for share in ("home", "documents"):
-            (self.root / share / "00_Eingang").mkdir(parents=True)
+            (self.root / share / "Post" / ".ordnig").mkdir(parents=True)
         with self.assertRaises(SystemExit) as e:
             state.find_inbox(self.root)
-        self.assertIn("--eingang", str(e.exception))
-
-    def test_adopt_moves_or_appends_and_keeps_the_original(self):
-        old_dir, new_dir = self.root / ".ordnig", self.root / "00_Eingang/.ordnig"
-        old_dir.mkdir(); new_dir.mkdir(parents=True)
-        (old_dir / "log.csv").write_text("h\nalt\n")
-        state.adopt(self.root, new_dir, "log.csv")
-        self.assertEqual((new_dir / "log.csv").read_text(), "h\nalt\n")
-        self.assertTrue((old_dir / "log.csv.übernommen").exists())
-        self.assertIsNone(state.legacy(self.root, new_dir, "log.csv"))
-        (old_dir / "log.csv").write_text("h\nnoch älter\n")                  # both exist: append rows
-        state.adopt(self.root, new_dir, "log.csv")
-        self.assertEqual((new_dir / "log.csv").read_text(), "h\nalt\nnoch älter\n")
-        state.adopt(self.root, old_dir, "log.csv")                             # same place: nothing to do
+        self.assertIn("--inbox", str(e.exception))
 
 
 if __name__ == "__main__":

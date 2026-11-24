@@ -20,17 +20,17 @@ class Names(unittest.TestCase):
         self.assertEqual(self.issues("Brief 2004-03-01.pdf"), "")
 
     def test_windows_characters_and_reserved(self):
-        self.assertIn("ungültig unter Windows", self.issues("frage?.txt"))
-        self.assertIn("Reservierter Windows-Name", self.issues("CON.txt"))
-        self.assertIn("Endet mit Leerzeichen/Punkt", self.issues("brief. "))
+        self.assertIn("invalid on Windows", self.issues("frage?.txt"))
+        self.assertIn("Reserved Windows name", self.issues("CON.txt"))
+        self.assertIn("Ends with a space/dot", self.issues("brief. "))
 
     def test_encodings(self):
         self.assertIn("Mojibake", self.issues("Ã¤nderung.txt"))
-        self.assertIn("kein gültiges UTF-8", self.issues("M?rz.txt", b"M\xe4rz.txt"))
+        self.assertIn("not valid UTF-8", self.issues("M?rz.txt", b"M\xe4rz.txt"))
         self.assertIn("NFD", self.issues("März.txt"))
 
     def test_long_path(self):
-        self.assertIn("Pfad sehr lang", " ".join(check.check_name("a/" * 130 + "x", "x", b"x")))
+        self.assertIn("Path very long", " ".join(check.check_name("a/" * 130 + "x", "x", b"x")))
 
 
 class Integrity(unittest.TestCase):
@@ -45,8 +45,8 @@ class Integrity(unittest.TestCase):
 
     def test_pdf(self):
         self.assertEqual(check.check_integrity(self.write("ok.pdf", b"%PDF-1.4\nx\n%%EOF\n"), "pdf"), [])
-        self.assertIn("PDF abgeschnitten (kein %%EOF)", check.check_integrity(self.write("cut.pdf", b"%PDF-1.4\nx"), "pdf"))
-        self.assertIn("PDF-Header fehlt", check.check_integrity(self.write("no.pdf", b"hello"), "pdf"))
+        self.assertIn("PDF truncated (no %%EOF)", check.check_integrity(self.write("cut.pdf", b"%PDF-1.4\nx"), "pdf"))
+        self.assertIn("PDF header missing", check.check_integrity(self.write("no.pdf", b"hello"), "pdf"))
 
     def test_pdfa_identifier(self):
         xmp = b'%PDF-1.7\n<pdfaid:part>2</pdfaid:part><pdfaid:conformance>U</pdfaid:conformance>\n%%EOF\n'
@@ -56,14 +56,14 @@ class Integrity(unittest.TestCase):
 
     def test_images(self):
         self.assertEqual(check.check_integrity(self.write("ok.jpg", b"\xff\xd8\xff\xe0" + b"0" * 10 + b"\xff\xd9"), "jpg"), [])
-        self.assertIn("JPEG abgeschnitten (kein EOI)", check.check_integrity(self.write("cut.jpg", b"\xff\xd8\xff\xe0000"), "jpg"))
-        self.assertIn("PNG abgeschnitten (kein IEND)", check.check_integrity(self.write("cut.png", b"\x89PNG\r\n\x1a\n0000"), "png"))
+        self.assertIn("JPEG truncated (no EOI)", check.check_integrity(self.write("cut.jpg", b"\xff\xd8\xff\xe0000"), "jpg"))
+        self.assertIn("PNG truncated (no IEND)", check.check_integrity(self.write("cut.png", b"\x89PNG\r\n\x1a\n0000"), "png"))
 
     def test_zip(self):
         ok = self.d / "ok.docx"
         with zipfile.ZipFile(ok, "w") as z: z.writestr("word/document.xml", "<x/>")
         self.assertEqual(check.check_integrity(ok, "docx"), [])
-        self.assertIn("ZIP-Struktur defekt", check.check_integrity(self.write("bad.zip", b"PK\x03\x04broken"), "zip"))
+        self.assertIn("ZIP structure broken", check.check_integrity(self.write("bad.zip", b"PK\x03\x04broken"), "zip"))
 
 
 class Mime(unittest.TestCase):
@@ -82,18 +82,18 @@ class Tree(unittest.TestCase):
 
     def test_tree_shape_and_totals(self):
         rows = [self.row("Briefe/alt.doc", "risk", kind="Word 97-2003"),
-                self.row("Briefe/2004/kaputt.pdf", issues="PDF abgeschnitten (kein %%EOF)"),
+                self.row("Briefe/2004/kaputt.pdf", issues="PDF truncated (no %%EOF)"),
                 self.row("a.txt")]
-        out = check.render_tree("ablage", rows, ["leer"], {"Briefe": ["a.txt"]}, [])
+        out = check.render_tree("archive", rows, ["empty"], {"Briefe": ["a.txt"]}, [])
         text = "\n".join(out)
-        self.assertTrue(out[0].startswith("ablage/  —  3 Dateien"))
+        self.assertTrue(out[0].startswith("archive/  —  3 files"))
         self.assertIn("🔴 1 · ⚠ 1", out[0])
-        self.assertIn("├── Briefe/  —  2 Dateien", text)
-        self.assertIn("│   ├── 2004/  —  1 Datei", text)
+        self.assertIn("├── Briefe/  —  2 files", text)
+        self.assertIn("│   ├── 2004/  —  1 file", text)
         self.assertIn("alt.doc  10 B · 2004-03-01 · 🔴 Word 97-2003 → ODT + PDF/A", text)
-        self.assertIn("⚠ PDF abgeschnitten", text)
-        self.assertIn("Namenskollision: a.txt", text)
-        self.assertIn("leer/  —  leer", text)
+        self.assertIn("⚠ PDF truncated", text)
+        self.assertIn("name collision: a.txt", text)
+        self.assertIn("empty/  —  empty", text)
         self.assertTrue(out[-1].startswith("└── a.txt"))
 
 
@@ -101,11 +101,11 @@ class Inbox(unittest.TestCase):
     """check and verify skip the inbox: unsorted mail is neither checked nor counted as new/moved."""
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory(); d = Path(self.dir.name)
-        self.root, self.out = d / "ablage", d / "report"
-        (self.root / "home" / "00_Eingang").mkdir(parents=True)
+        self.root, self.out = d / "archive", d / "report"
+        (self.root / "home" / "Inbox" / ".ordnig").mkdir(parents=True)    # a share's inbox is found by its state
         (self.root / "docs").mkdir()
         (self.root / "docs" / "a.txt").write_text("a")
-        (self.root / "home" / "00_Eingang" / "brief.txt").write_text("b")
+        (self.root / "home" / "Inbox" / "brief.txt").write_text("b")
 
     def tearDown(self):
         self.dir.cleanup()
@@ -119,15 +119,15 @@ class Inbox(unittest.TestCase):
         return (self.out / "manifest.sha256").read_text()
 
     def test_scan_skips_inbox(self):
-        files, *_ = check.scan(self.root.resolve(), None, [(self.root / "home" / "00_Eingang").resolve()])
+        files, *_ = check.scan(self.root.resolve(), None, [(self.root / "home" / "Inbox").resolve()])
         self.assertEqual([p.name for p in files], ["a.txt"])
 
     def test_check_and_verify_ignore_inbox(self):
         self.assertEqual(self.check().returncode, 0)
         self.assertIn("docs/a.txt", self.manifest())
         self.assertNotIn("brief.txt", self.manifest())
-        old = self.out / "old.sha256"; old.write_text(self.manifest() + "0" * 64 + "  home/00_Eingang/alt.txt\n")
-        (self.root / "home" / "00_Eingang" / "neu.txt").write_text("n")
+        old = self.out / "old.sha256"; old.write_text(self.manifest() + "0" * 64 + "  home/Inbox/alt.txt\n")
+        (self.root / "home" / "Inbox" / "neu.txt").write_text("n")
         r = self.check("--verify", str(old))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)   # inbox entries of an older manifest are not "missing"
 
@@ -139,22 +139,22 @@ class Inbox(unittest.TestCase):
         self.log_rule_copy("docs/rechnung.pdf", "steuer/rechnung.pdf", "same")
         self.assertEqual(self.check().returncode, 0)
         dups = (self.out / "duplicates.csv").read_text().splitlines()
-        self.assertIn("docs/rechnung.pdf,ja", "\n".join(dups))
+        self.assertIn("docs/rechnung.pdf,yes", "\n".join(dups))
         self.assertTrue(any(l.endswith("docs/zufall.txt,") for l in dups))
         report = (self.out / "report.md").read_text()
-        self.assertIn("1 Gruppen, ", report.split("### Duplikate")[1].split("###")[0])
-        self.assertIn("`docs/rechnung.pdf` = `steuer/rechnung.pdf`", report.split("### Gewollte Duplikate")[1])
+        self.assertIn("1 groups, ", report.split("### Duplicates")[1].split("###")[0])
+        self.assertIn("`docs/rechnung.pdf` = `steuer/rechnung.pdf`", report.split("### Intended duplicates")[1])
 
-    def log_rule_copy(self, nach, kopie, content):
+    def log_rule_copy(self, to, copy, content):
         import hashlib
-        state = self.root / "home" / "00_Eingang" / ".ordnig"; state.mkdir(exist_ok=True)
-        (state / "protokoll.csv").write_text(
-            "zeit,datei,status,nach,kopien,quelle,grund,sha256\n"
-            f"2026-11-24,x.pdf,abgelegt,{nach},{kopie},Regel x,,{hashlib.sha256(content.encode()).hexdigest()}\n",
+        state = self.root / "home" / "Inbox" / ".ordnig"; state.mkdir(exist_ok=True)
+        (state / "sort-log.csv").write_text(
+            "time,file,status,to,copies,source,reason,sha256\n"
+            f"2026-11-24,x.pdf,filed,{to},{copy},rule x,,{hashlib.sha256(content.encode()).hexdigest()}\n",
             encoding="utf-8")
 
-    def gewollt(self):
-        return [l for l in (self.out / "duplicates.csv").read_text().splitlines() if l.endswith(",ja")]
+    def intended(self):
+        return [l for l in (self.out / "duplicates.csv").read_text().splitlines() if l.endswith(",yes")]
 
     def test_rule_copy_stays_intended_after_rename(self):
         (self.root / "steuer").mkdir()
@@ -162,7 +162,7 @@ class Inbox(unittest.TestCase):
         (self.root / "steuer" / "rechnung.pdf").write_text("same")
         self.log_rule_copy("docs/rechnung.pdf", "steuer/rechnung.pdf", "same")
         self.assertEqual(self.check().returncode, 0)
-        self.assertEqual(len(self.gewollt()), 2)
+        self.assertEqual(len(self.intended()), 2)
 
     def test_one_more_identical_file_is_a_finding(self):
         (self.root / "steuer").mkdir()
@@ -170,14 +170,14 @@ class Inbox(unittest.TestCase):
             (self.root / rel).write_text("same")
         self.log_rule_copy("docs/rechnung.pdf", "steuer/rechnung.pdf", "same")
         self.assertEqual(self.check().returncode, 0)
-        self.assertEqual(self.gewollt(), [])
+        self.assertEqual(self.intended(), [])
 
 
 class Format(unittest.TestCase):
     def test_sizes(self):
         self.assertEqual(check.hs(0), "0 B")
         self.assertEqual(check.hs(1536), "1.5 KB")
-        self.assertEqual(check.num(1234567), "1.234.567")
+        self.assertEqual(check.num(1234567), "1,234,567")
 
 
 if __name__ == "__main__":

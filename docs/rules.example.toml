@@ -1,0 +1,41 @@
+# <inbox>/.ordnig/rules.toml – optional. Paths are relative to the archive root.
+# Unknown keys, broken patterns and missing folders stop the run (all errors listed).
+
+# Folders that are not examples for incoming mail (photos, backups, old stuff).
+ignore = ["70_Medien", "90_Backup"]
+
+# Folder in the inbox for files sort does not file (default "_Review").
+[folders]
+review = "_Review"
+
+[thresholds]
+k = 7              # neighbours that vote
+share = 0.7        # winner's share of the vote weight
+similarity = 0.2   # minimum similarity of the closest document (0–1)
+
+# Where {year} must not be the letter's date: group 1 is the year.
+[year]
+"20_Finanzen/0_Steuer/{year}" = '(?:Veranlagungszeitraum|Kalenderjahr|Steuerjahr)\s*:?\s*(\d{4})'
+
+# First matching rule wins. Patterns are regular expressions, case-insensitive,
+# matched against the file name and the text.
+#   any: one of them must match · all: all must match · none: none may match
+#   year: year pattern for target · copy: also copy the file there (e.g. for taxes)
+#   copy_year: year pattern for copy (default: newest date in the text, not the [year]
+#              pattern of that folder)
+[[rule]]
+name = "Dividende"
+target = "20_Finanzen/Bank/{year}"
+all = ['Beispielbank AG', 'Dividend|Ausschüttung']
+copy = "20_Finanzen/0_Steuer/{year}"
+
+[[rule]]
+name = "Lohnabrechnung"
+target = "41_Arbeit/Arbeitgeber/Lohnabrechnung"
+all = ['Verdienstabrechnung|Lohnabrechnung', 'Arbeitgeber AG']
+
+[[rule]]
+name = "Bank"
+target = "20_Finanzen/Bank/{year}"
+any = ['Beispielbank AG', '\bDE\d{2}1234\d{12}\b']
+none = ['Werbung']

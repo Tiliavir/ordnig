@@ -12,17 +12,17 @@ class Plan(unittest.TestCase):
         migrate.RESERVED.clear()
         self.dir = tempfile.TemporaryDirectory(); self.root = Path(self.dir.name)
         for f in ["Briefe/x.doc", "Briefe/x.rtf", "Briefe/y.odt", "Briefe/y.pdf", "Scans/s.pdf", "Scans/s.tif",
-                  "Briefe/~$x.doc", ".ordnig/migration_log.csv", "Fotos/bild.jpg"]:
+                  "Briefe/~$x.doc", ".ordnig/run-log.csv", "Fotos/bild.jpg"]:
             p = self.root / f; p.parent.mkdir(parents=True, exist_ok=True); p.write_text("x")
 
     def tearDown(self):
         self.dir.cleanup()
 
     def test_inbox_is_skipped(self):
-        (self.root / "home/00_Eingang").mkdir(parents=True)
-        (self.root / "home/00_Eingang/post.doc").write_text("x")
-        jobs = migrate.plan(self.root, set(), set(), set(), skip=[self.root / "home/00_Eingang"])
-        self.assertFalse(any("00_Eingang" in str(j) for j in jobs))
+        (self.root / "home/Inbox").mkdir(parents=True)
+        (self.root / "home/Inbox/post.doc").write_text("x")
+        jobs = migrate.plan(self.root, set(), set(), set(), skip=[self.root / "home/Inbox"])
+        self.assertFalse(any("Inbox" in str(j) for j in jobs))
         self.assertTrue(any("post.doc" in str(j) for j in migrate.plan(self.root, set(), set(), set())))
 
     def plan(self, images=()):
@@ -58,14 +58,14 @@ class Plan(unittest.TestCase):
 
 
     def test_relative_log_survives_another_mount_point(self):
-        """Generated files are recognised wherever the archive is mounted (log format 2)."""
+        """Generated files are recognised wherever the archive is mounted (paths relative to it)."""
         import subprocess, sys
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "anywhere"; (root / "docs").mkdir(parents=True)
             (root / "docs" / "brief.docx").write_text("x"); (root / "docs" / "brief.odt").write_text("y")
-            state = root / "00_Eingang" / ".ordnig"; state.mkdir(parents=True)
-            (state / "migration_log.csv").write_text(
-                "quelle,aktion,ziel,status,pdfa,hinweis,zeit,sekunden\n"
+            state = root / "Inbox" / ".ordnig"; state.mkdir(parents=True)
+            (state / "run-log.csv").write_text(
+                "source,action,target,status,pdfa,note,time,seconds\n"
                 "docs/brief.docx,odf,docs/brief.odt,ok,,,2026-11-23 10:00:00,1\n", encoding="utf-8")
             report = Path(d) / "plan.md"
             subprocess.run([sys.executable, str(SRC / "migrate.py"), str(root), "--report", str(report)],
@@ -79,7 +79,7 @@ class Suggest(unittest.TestCase):
         from collections import Counter
         cmd, hints = migrate.suggest(set(), "deu+eng", None, Counter(tif=3, jpg=40), planned=5)
         self.assertEqual(cmd, "ordnig run --images tif")
-        self.assertIn("3 TIFF-Dateien", hints[0])
+        self.assertIn("3 TIFF files", hints[0])
         self.assertIn("40 .jpg", hints[1]); self.assertIn("--images jpg,tif", hints[1])
 
     def test_keeps_given_options(self):
@@ -90,7 +90,7 @@ class Suggest(unittest.TestCase):
     def test_nothing_to_do(self):
         from collections import Counter
         cmd, hints = migrate.suggest(set(), "deu+eng", None, Counter(), planned=0)
-        self.assertIsNone(cmd); self.assertIn("Nichts zu tun", hints[0])
+        self.assertIsNone(cmd); self.assertIn("Nothing to do", hints[0])
 
     def test_count_images_skips_planned_and_state(self):
         root = Path(tempfile.mkdtemp())
@@ -158,18 +158,17 @@ class Helpers(unittest.TestCase):
     def test_fix_scans_hint_and_flag(self):
         from collections import Counter
         _, hints = migrate.suggest(set(), "deu+eng", None, Counter(), planned=3, scan_pdfs=2)
-        self.assertIn("--fix-scans", hints[-1]); self.assertIn("2 PDF mit Scan-Seiten", hints[-1])
+        self.assertIn("--fix-scans", hints[-1]); self.assertIn("2 PDF with scanned pages", hints[-1])
         cmd, hints = migrate.suggest(set(), "deu+eng", None, Counter(tif=1), planned=1, fix_scans=True)
         self.assertEqual(cmd, "ordnig run --images tif --fix-scans")
         self.assertFalse(any("--fix-scans" in h for h in hints))
 
-    def test_upgrade_old_log(self):
-        log = Path(tempfile.mkdtemp()) / "migration_log.csv"
-        log.write_text("quelle,aktion,ziel,status,pdfa,hinweis,zeit\n/a.doc,pdfa,/a.pdf,ok,2u,x,2026-11-14\n")
-        migrate.upgrade_log(log)
-        lines = log.read_text().splitlines()
-        self.assertEqual(lines[0], ",".join(migrate.LOG_FIELDS))
-        self.assertTrue(lines[1].startswith("/a.doc,pdfa,/a.pdf,ok,2u,x,2026-11-14"))
+    def test_log_of_another_version_stops(self):
+        log = Path(tempfile.mkdtemp()) / "run-log.csv"
+        log.write_text("source,action,target,status,pdfa,note,time\n/a.doc,pdfa,/a.pdf,ok,2u,x,2026-11-14\n")
+        with self.assertRaises(SystemExit) as e:
+            migrate.check_log(log)
+        self.assertEqual(e.exception.code, 2)
 
     def test_duration(self):
         self.assertEqual(migrate.fmt_dur(65), "1:05 min")
@@ -178,8 +177,8 @@ class Helpers(unittest.TestCase):
 
 class Tree(unittest.TestCase):
     def test_render(self):
-        out = migrate.render_tree("ablage", {"A/x.doc": "→ x.odt", "b.pdf": "→ b_pdfa.pdf"})
-        self.assertEqual(out, ["ablage/  —  2 Dateien", "├── A/  —  1 Datei", "│   └── x.doc  → x.odt",
+        out = migrate.render_tree("archive", {"A/x.doc": "→ x.odt", "b.pdf": "→ b_pdfa.pdf"})
+        self.assertEqual(out, ["archive/  —  2 files", "├── A/  —  1 file", "│   └── x.doc  → x.odt",
                                "└── b.pdf  → b_pdfa.pdf"])
 
 
