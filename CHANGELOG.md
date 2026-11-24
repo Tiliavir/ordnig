@@ -17,6 +17,14 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   convert generated files again. The first `run` or `sort --apply` lifts an existing
   log; paths outside the current archive stay as they are and are reported. Older
   ordnig versions refuse a lifted folder (exit 2).
+- The checksum baseline for `verify` lives in `00_Eingang/.ordnig/manifest.sha256`
+  instead of `/report`, so it travels with the archive and its backup. Each `check`
+  still leaves a copy in its report folder. A baseline in `/report` is not taken over:
+  run `check` once to create a new one.
+- All commands skip the same system folders, now also snapshots and recycle bins of
+  QNAP, NetApp/NFS, Btrfs, Windows and macOS (Synology already before).
+- Architecture documented as arc42 in `docs/arc42/` (product view); replaces
+  `docs/architecture.md` and `OPEN.md`.
 
 ### Added
 

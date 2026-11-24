@@ -21,6 +21,17 @@ from pathlib import Path
 OK, FEHLER, SETUP, GESPERRT, PRUEFEN = 0, 1, 2, 3, 4
 
 INBOX, STATE = "00_Eingang", ".ordnig"
+# Ordner, die nie zur Ablage gehören: eigene Daten, Papierkörbe, Snapshots und Indizes von
+# NAS (Synology, QNAP, NetApp/NFS) und Betriebssystemen. Snapshots würden sonst alles doppelt zählen.
+SYSTEM_DIRS = frozenset({
+    STATE, ".git",
+    "@eaDir", "#recycle", "#snapshot",                      # Synology
+    "@Recycle", "@Recently-Snapshot", ".@__thumb",          # QNAP
+    ".snapshot", ".snapshots",                              # NetApp, NFS, Btrfs/snapper
+    "$RECYCLE.BIN", "System Volume Information",            # Windows
+    ".Trashes", ".Spotlight-V100", ".fseventsd", ".TemporaryItems",  # macOS
+    "lost+found", "OneNote_RecycleBin",
+})
 FORMAT = 2               # Aufbau der .ordnig-Ordner; bei jeder inkompatiblen Änderung +1
 MIGRATIONS = {}          # {alte Version: Funktion(ordner, ablage)} hebt einen Ordner um eine Version an
 LOG_NAME = "migration_log.csv"
@@ -212,6 +223,17 @@ def write_format(vfile: Path, fmt: int):
     tmp.replace(vfile)
 
 
+def main_cli():
+    """Für das Startskript: `state.py dir <ablage> [--eingang PFAD]` gibt den .ordnig-Ordner aus."""
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["dir"])
+    ap.add_argument("root", type=Path)
+    ap.add_argument("--eingang", type=Path, default=None)
+    a = ap.parse_args()
+    print(state_dir(a.root.resolve(), a.eingang))
+
+
 def stop(msg, code=SETUP):
     print(msg, file=sys.stderr)
     raise SystemExit(code)
@@ -228,3 +250,7 @@ def run(main):
         else:
             code = e.code
     sys.exit(code or OK)
+
+
+if __name__ == "__main__":
+    run(main_cli)

@@ -69,6 +69,8 @@ ordnig run --images png >/dev/null
 ordnig verify >/dev/null
 grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
 [[ -s $ORDNIG_SRC/.ordnig/version.json ]] || fail "run: missing .ordnig/version.json"
+[[ -s $ORDNIG_SRC/.ordnig/manifest.sha256 ]] || fail "run: checksums not stored in .ordnig"
+[[ ! -e $ORDNIG_OUT/manifest.sha256 ]] || fail "run: checksums stored in /report"
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 

@@ -245,7 +245,7 @@ def scan(root: Path, args, skip=()):
     files, empty_dirs, dir_errors = [], [], []
     case_map = defaultdict(list)
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: dir_errors.append(str(e))):
-        dirnames[:] = [d for d in dirnames if not d.startswith("@eaDir") and d not in ("#recycle", ".ordnig")  # Synology, eigene Daten
+        dirnames[:] = [d for d in dirnames if d not in state.SYSTEM_DIRS
                        and Path(dirpath) / d not in skip]
         if not dirnames and not filenames:
             empty_dirs.append(os.path.relpath(dirpath, root))
