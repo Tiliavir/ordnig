@@ -214,25 +214,25 @@ def sha256(path, bufsize=1 << 20):
 
 # ---------------------------------------------------------------- Regel-Kopien
 def rule_copies(inbox):
-    """Dateien, die sort per Regel (kopie) mehrfach abgelegt hat: je Ablage die Menge
-    relativer Pfade {nach, kopien…}. Gleiche Inhalte darin sind gewollte Duplikate."""
+    """Inhalte, die sort per Regel (kopie) mehrfach abgelegt hat: SHA-256 -> Anzahl der Exemplare
+    {nach, kopien…}. Am Inhalt erkannt, damit Umbenennen oder Verschieben nichts ändert."""
     log = inbox / ".ordnig" / "protokoll.csv" if inbox else None
     if not log or not log.is_file():
-        return []
-    sets = []
+        return {}
+    counts = {}
     with open(log, encoding="utf-8", newline="", errors="surrogateescape") as f:
         for r in csv.DictReader(f):
-            if r.get("status") != "abgelegt" or not r.get("kopien"):
+            if r.get("status") != "abgelegt" or not r.get("kopien") or not r.get("sha256"):
                 continue
-            s = {r["nach"]} | {k.removesuffix(" (schon vorhanden)") for k in r["kopien"].split(" | ") if k}
-            if len(s) > 1:
-                sets.append(frozenset(s))
-    return sets
+            n = 1 + sum(1 for k in r["kopien"].split(" | ") if k)
+            counts[r["sha256"]] = max(counts.get(r["sha256"], 0), n)
+    return counts
 
 
-def intended(group, root, copy_sets):
-    rel = {str(p.relative_to(root)) for p in group}
-    return any(rel <= s for s in copy_sets)
+def intended(digest, group, copies):
+    """Gewollt, wenn eine Regel diesen Inhalt mindestens so oft abgelegt hat; ein weiteres Exemplar
+    macht die Gruppe wieder zum Befund."""
+    return len(group) <= copies.get(digest, 0)
 
 
 # ---------------------------------------------------------------- Scan
@@ -459,9 +459,9 @@ def main():
         for p, h in hashes.items(): groups[h].append(p)
         dup_groups = sorted((g for g in groups.values() if len(g) > 1),
                             key=lambda g: -g[0].stat().st_size * (len(g) - 1))
-        copy_sets = rule_copies(inbox)
-        copy_groups = [g for g in dup_groups if intended(g, root, copy_sets)]
-        dup_groups = [g for g in dup_groups if not intended(g, root, copy_sets)]
+        copies = rule_copies(inbox)
+        copy_groups = [g for g in dup_groups if intended(hashes[g[0]], g, copies)]
+        dup_groups = [g for g in dup_groups if not intended(hashes[g[0]], g, copies)]
         by_path = {r.get("_p"): r for r in rows}
         for g in copy_groups:
             for p in g:

@@ -705,6 +705,8 @@ def main():
         migrate.console_table("Eingang: Bewertung", table, notes + [f"Details: {args.report}" if args.report else ""])
         return state.OK
 
+    if args.apply:
+        check_log(eingang / STATE / "protokoll.csv")       # vor dem ersten Verschieben
     files = inbox_files(eingang)
     results, counts = [], Counter()
     for i, f in enumerate(files, 1):
@@ -742,6 +744,8 @@ def main():
         if args.apply:
             try:
                 dst.parent.mkdir(parents=r["ziel"] is None, exist_ok=True)   # nur Jahresordner neu
+                if status == "abgelegt":
+                    r["sha256"] = sha256(f)  # check erkennt Regel-Kopien am Inhalt, auch nach Umbenennen
                 move_safely(f, dst)
             except OSError as e:
                 status, r["grund"] = "fehler", f"{type(e).__name__}: {e}"
@@ -784,7 +788,18 @@ def main():
         waiting += counts["prüfen"]
     return state.PRUEFEN if waiting else state.OK
 
-LOG_HEADER = ["zeit", "datei", "status", "nach", "kopien", "quelle", "grund"]
+LOG_HEADER = ["zeit", "datei", "status", "nach", "kopien", "quelle", "grund", "sha256"]
+
+def check_log(path: Path):
+    """Ein Protokoll mit anderen Spalten wird nicht umgeschrieben (vor dem Produktivbetrieb keine
+    Migrationen) und nicht weitergeschrieben (Zeilen passten nicht zum Kopf): Abbruch."""
+    if not path.is_file():
+        return
+    with open(path, newline="", encoding="utf-8", errors="surrogateescape") as fh:
+        head = next(csv.reader(fh), [])
+    if head != LOG_HEADER:
+        state.stop(f"{path}: Spalten einer älteren ordnig-Version ({', '.join(head)}). "
+                   "Bitte wegverschieben; sort legt ein neues an.")
 
 def append_log(path: Path, results, stamp):
     """Dauerhaftes Protokoll im Eingang: was wohin abgelegt wurde (auch zum Rückgängigmachen)."""
@@ -796,7 +811,7 @@ def append_log(path: Path, results, stamp):
             w.writerow(LOG_HEADER)
         for r in results:
             w.writerow([stamp, r["datei"].name, r["status"], r["nach"], " | ".join(r["kopien_nach"]),
-                        r["quelle"], r["grund"]])
+                        r["quelle"], r["grund"], r.get("sha256", "")])
 
 def write_sort_report(path, root, eingang, results, table, notes, applied):
     if not path:
