@@ -16,9 +16,8 @@ Folders ordnig looks for or creates are configuration with English defaults:
   because that file lives in the inbox.
 - Review folder: `[folders] review` in `rules.toml`, default `_Review`.
 
-The state-format lift ([ADR](ADR-20261117-state-folder.md)) migrates existing
-state folders: renames the files and rewrites the known rule keys, and reports what
-it changed.
+No migration of existing state folders (pre-production): a state folder with the
+old German names is refused with a clear message.
 
 ## Why
 
