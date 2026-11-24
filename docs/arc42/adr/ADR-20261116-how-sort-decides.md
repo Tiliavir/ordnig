@@ -5,15 +5,15 @@ Status: Proposed (2026-11-16)
 ## Decision
 
 1. **Classes from the archive:** every folder of the archive is a class and its
-   documents are examples; year folders become `{jahr}`.
+   documents are examples; year folders become `{year}`.
 2. **Rules first:** the first matching rule wins; otherwise similarity decides.
 3. **Similarity:** TF-IDF with cosine and k = 7 nearest neighbours, written with the
    Python standard library.
-4. **Unsure → `_Prüfen`:** unsure, unreadable, without a year for `{jahr}`, or already
-   filed → `00_Eingang/_Prüfen/` with the reason. A wrong configuration stops the run
+4. **Unsure → `_Review`:** unsure, unreadable, without a year for `{year}`, or already
+   filed → `<inbox>/_Review/` with the reason. A wrong configuration stops the run
    with all errors listed.
 
-No LLM: a fallback comes only if `--eval` and real use show many files in `_Prüfen`
+No LLM: a fallback comes only if `--eval` and real use show many files in `_Review`
 ([#15](https://github.com/Tiliavir/ordnig/issues/15)).
 
 ## Why

@@ -5,15 +5,16 @@ Status: Proposed (2026-11-17)
 ## Decision
 
 1. **One folder in the inbox:** everything that must survive a run lives in
-   `00_Eingang/.ordnig/`: rules, cached texts, the `sort` history and, since 0.8, the
-   conversion log of `run`. The inbox is found as `--eingang`, `<archive>/00_Eingang`
-   or exactly one `<archive>/*/00_Eingang`. Only an archive without inbox keeps it in
+   `<inbox>/.ordnig/`: rules, cached texts, the `sort` history and, since 0.8, the
+   conversion log of `run`. The inbox is found as described in
+   [English throughout](ADR-20261123-english-ui-configurable-folders.md) (`--inbox`, the
+   folder holding `.ordnig/`, `<archive>/Inbox`). Only an archive without inbox keeps it in
    `<archive>/.ordnig/`.
 2. **Format version** (2026-11-18): `.ordnig/version.json` records the format; newer
    ordnig versions lift older folders step by step, older ones refuse newer folders.
 3. **Paths relative to the archive** (2026-11-23): the conversion log stores paths
    relative to the archive root; each run joins them with the root it has mounted.
-   Several mounts keep their names below the root (`-v <share>:/ablage/<name>`); the
+   Several mounts keep their names below the root (`-v <share>:/archive/<name>`); the
    name is part of the relative path. State format 2 lifts existing logs; paths
    outside the current archive stay absolute and are reported.
 4. **Checksum baseline** (2026-11-23): the baseline for `verify` is state like the logs:
@@ -24,7 +25,7 @@ Status: Proposed (2026-11-17)
 
 1. Containers are short-lived and may run on another host or in another version next
    time, so nothing may depend on the container or `/report`. With several mounts
-   below `/ablage`, `/ablage/.ordnig` would be inside the container and lost. One
+   below `/archive`, `/archive/.ordnig` would be inside the container and lost. One
    folder means one lock for `run` and `sort`.
 2. The state outlives containers and versions, so a change must be detected, not
    guessed.

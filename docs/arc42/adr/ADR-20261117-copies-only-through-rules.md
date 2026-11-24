@@ -4,7 +4,7 @@ Status: Proposed (2026-11-17)
 
 ## Decision
 
-1. Additional copies (e.g. into the tax year) are made only by rules (`kopie`), as real copies.
+1. Additional copies (e.g. into the tax year) are made only by rules (`copy`), as real copies.
 2. **Recognised by content** (2026-11-24): `sort` records the SHA-256 of every filed
    document; `check` treats a duplicate group as intended when a rule filed that content
    at least as many times (original + copies).
