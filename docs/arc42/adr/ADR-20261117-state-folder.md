@@ -18,8 +18,7 @@ Status: Proposed (2026-11-17)
    outside the current archive stay absolute and are reported.
 4. **Checksum baseline** (2026-11-23): the baseline for `verify` is state like the logs:
    `.ordnig/manifest.sha256`, written by `run` and by the first `check`. Each check
-   still leaves its own copy in its report folder. A baseline in `/report` (up to 0.8)
-   is taken over.
+   still leaves its own copy in its report folder.
 
 ## Why
 

@@ -17,6 +17,14 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   convert generated files again. The first `run` or `sort --apply` lifts an existing
   log; paths outside the current archive stay as they are and are reported. Older
   ordnig versions refuse a lifted folder (exit 2).
+- The checksum baseline for `verify` lives in `00_Eingang/.ordnig/manifest.sha256`
+  instead of `/report`, so it travels with the archive and its backup. Each `check`
+  still leaves a copy in its report folder. A baseline in `/report` is not taken over:
+  run `check` once to create a new one.
+- All commands skip the same system folders, now also snapshots and recycle bins of
+  QNAP, NetApp/NFS, Btrfs, Windows and macOS (Synology already before).
+- Architecture documented as arc42 in `docs/arc42/` (product view); replaces
+  `docs/architecture.md` and `OPEN.md`.
 
 ### Added
 
@@ -37,14 +45,6 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 - Base image Ubuntu 26.04 LTS (supported until 2031) instead of 25.10, which
   has had no security updates since 9 July 2026. The image shrinks by about
   60 MB.
-- The checksum baseline for `verify` lives in `00_Eingang/.ordnig/manifest.sha256`
-  instead of `/report`, so it travels with the archive and its backup. Each `check`
-  still leaves a copy in its report folder. An existing `/report/manifest.sha256` is
-  taken over.
-- All commands skip the same system folders, now also snapshots and recycle bins of
-  QNAP, NetApp/NFS, Btrfs, Windows and macOS (Synology already before).
-- Architecture documented as arc42 in `docs/arc42/` (product view); replaces
-  `docs/architecture.md` and `OPEN.md`.
 
 ## [0.8.0] - 2026-11-18
 
@@ -70,8 +70,6 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   `sort` filed it, so original and copies are never filed separately.
 - `sort` finds the inbox the same way, so `--eingang` is only needed when there
   are several.
-- Architecture documented as arc42 in `docs/arc42/` (one file per chapter, one per ADR);
-  replaces `docs/architecture.md`.
 - `run` finishes the check afterwards even when single files failed, then exits 1.
 - Setup errors (missing archive, tools, bad `regeln.toml`) exit with 2 instead of 1.
 

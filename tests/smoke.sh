@@ -135,12 +135,6 @@ rep=$(echo "$W"/check-sort/*-check/report.md)
 grep -qF "\`Steuer/2026/beitrag.pdf\` = \`Versicherung/beitrag-2026.pdf\`" "$rep" || fail "check: renamed rule copy not intended"
 ! grep 'beitrag' "$rep" | grep -q '⧉' || fail "check: rule copy reported as duplicate"
 
-# verify takes over a baseline from /report (up to 0.8)
-mv "$ORDNIG_SRC/.ordnig/manifest.sha256" "$ORDNIG_OUT/manifest.sha256"
-ordnig verify > /dev/null 2> "$W/adopt.txt" || { cat "$W/adopt.txt"; fail "verify with the old baseline"; }
-[[ -s $ORDNIG_SRC/.ordnig/manifest.sha256 ]] || fail "old baseline not taken over"
-grep -q übernommen "$W/adopt.txt" || fail "taking over the old baseline not reported"
-
 # verify: a changed file is exit code 1 (for cron/systemd)
 echo x >> "$ORDNIG_SRC/Briefe/konto.xls"
 rc=0; ordnig verify > /dev/null || rc=$?

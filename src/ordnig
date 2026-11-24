@@ -72,13 +72,6 @@ baseline() {
   local dir
   dir=$("${PY[@]}" "$LIB/state.py" dir "$SRC" "${INBOX[@]}") || exit 2
   BASELINE=$dir/manifest.sha256
-  if [[ ! -f $BASELINE && -f $OUT/manifest.sha256 ]]; then   # up to 0.8 it lived in /report
-    if mkdir -p "$dir" 2>/dev/null && cp "$OUT/manifest.sha256" "$BASELINE.tmp" 2>/dev/null; then
-      mv "$BASELINE.tmp" "$BASELINE"; echo "Prüfsummen übernommen: $OUT/manifest.sha256 → $BASELINE" >&2
-    else
-      BASELINE=$OUT/manifest.sha256                           # archive read-only: read the old one
-    fi
-  fi
 }
 
 store_manifest() {

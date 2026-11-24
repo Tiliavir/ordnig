@@ -24,8 +24,7 @@ Location: `--eingang`, else `<archive>/00_Eingang`, else exactly one
 | `lock` | all writers | POSIX lock for the whole run; names the holder |
 
 A log at the old place (`<archive>/.ordnig/`, up to 0.7) is read and taken over at
-the next `run`; the original stays as `….übernommen`. A baseline in `/report` (up to
-0.8) is copied into `.ordnig` by the next `check`, `run` or `verify`
+the next `run`; the original stays as `….übernommen`. The checksum baseline lives in `.ordnig`
 ([ADR](adr/ADR-20261117-state-folder.md)). A newer ordnig lifts an older
 format step by step; an older ordnig refuses a newer one (exit 2).
 
