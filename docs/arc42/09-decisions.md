@@ -1,6 +1,7 @@
 # 9 Architecture decisions
 
-One file per decision in [`adr/`](adr/).
+One file per topic in [`adr/`](adr/); related decisions share an ADR, the date is that of
+the first one.
 
 <a id="q15"></a>
 > [!IMPORTANT]
@@ -9,25 +10,13 @@ One file per decision in [`adr/`](adr/).
 
 | Date | Decision | Status |
 | --- | --- | --- |
-| 2026-11-14 | [Copies next to the original](adr/ADR-20261114-copies-next-to-the-original.md) | Proposed |
+| 2026-11-14 | [Originals stay untouched](adr/ADR-20261114-originals-stay-untouched.md) | Proposed |
 | 2026-11-14 | [Declare PDF/A-2u only after veraPDF](adr/ADR-20261114-declare-2u-only-after-verapdf.md) | Proposed |
 | 2026-11-14 | [Preview by default](adr/ADR-20261114-preview-by-default.md) | Proposed |
-| 2026-11-14 | [Images are opt-in](adr/ADR-20261114-images-opt-in.md) | Proposed |
-| 2026-11-14 | [`_pdfa` suffix for existing PDFs](adr/ADR-20261114-pdfa-suffix-for-pdfs.md) | Proposed |
-| 2026-11-14 | [Distribution packages, lean image](adr/ADR-20261114-distribution-packages-lean-image.md) | Proposed |
-| 2026-11-14 | [Release from CHANGELOG.md](adr/ADR-20261114-release-from-changelog.md) | Proposed |
-| 2026-11-14 | [Trivy fails only on fixable critical findings](adr/ADR-20261114-trivy-fixable-critical-only.md) | Proposed |
-| 2026-11-16 | [Learn from the archive's folders](adr/ADR-20261116-learn-from-archive-folders.md) | Proposed |
-| 2026-11-16 | [Rules first, similarity second, no LLM yet](adr/ADR-20261116-rules-first-no-llm-yet.md) | Proposed |
-| 2026-11-16 | [k nearest neighbours in the standard library](adr/ADR-20261116-knn-in-the-standard-library.md) | Proposed |
-| 2026-11-16 | [Unsure files go to `_Prüfen`](adr/ADR-20261116-unsure-files-to-pruefen.md) | Proposed |
-| 2026-11-16 | [Files keep their names](adr/ADR-20261116-keep-file-names.md) | Proposed |
-| 2026-11-17 | [State in the inbox](adr/ADR-20261117-state-in-the-inbox.md) | Proposed |
+| 2026-11-14 | [What `run` converts](adr/ADR-20261114-what-run-converts.md) | Proposed |
+| 2026-11-14 | [Image build, scan and release](adr/ADR-20261114-image-build-and-release.md) | Proposed |
+| 2026-11-16 | [How `sort` decides](adr/ADR-20261116-how-sort-decides.md) | Proposed |
 | 2026-11-17 | [Copies only through rules](adr/ADR-20261117-copies-only-through-rules.md) | Proposed |
-| 2026-11-18 | [Exit codes as the automation interface](adr/ADR-20261118-exit-codes.md) | Proposed |
-| 2026-11-18 | [One lock with `lockf`](adr/ADR-20261118-lock-with-lockf.md) | Proposed |
-| 2026-11-18 | [Format version of the state folder](adr/ADR-20261118-state-format-version.md) | Proposed |
-| 2026-11-18 | [Mount guard via the cache](adr/ADR-20261118-mount-guard-via-cache.md) | Proposed |
-| 2026-11-19 | [`run` skips the inbox](adr/ADR-20261119-run-skips-the-inbox.md) | Proposed |
+| 2026-11-17 | [State folder](adr/ADR-20261117-state-folder.md) | Proposed |
+| 2026-11-18 | [Safe unattended runs](adr/ADR-20261118-unattended-runs.md) | Proposed |
 | 2026-11-23 | [English throughout, folder names are configuration](adr/ADR-20261123-english-ui-configurable-folders.md) | Proposed |
-| 2026-11-23 | [Log paths relative to the archive](adr/ADR-20261123-log-paths-relative-to-archive.md) | Proposed |

@@ -27,7 +27,7 @@ the next `run`; the original stays as `….übernommen`. A newer ordnig lifts an
 format step by step; an older ordnig refuses a newer one (exit 2).
 
 Paths in `migration_log.csv` are relative to the archive root, so the log survives any
-mount point ([ADR](adr/ADR-20261123-log-paths-relative-to-archive.md)).
+mount point ([ADR](adr/ADR-20261117-state-folder.md)).
 
 <a id="exit-codes"></a>
 ## Exit codes
