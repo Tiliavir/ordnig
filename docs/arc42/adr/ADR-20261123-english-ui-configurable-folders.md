@@ -1,6 +1,6 @@
 # English throughout, folder names are configuration
 
-Status: Proposed (2026-11-23)
+Status: Accepted (2026-11-24, proposed 2026-11-23)
 
 ## Decision
 

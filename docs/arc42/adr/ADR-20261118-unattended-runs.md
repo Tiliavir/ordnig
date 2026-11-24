@@ -1,6 +1,6 @@
 # Safe unattended runs
 
-Status: Proposed (2026-11-18)
+Status: Accepted (2026-11-24, proposed 2026-11-18)
 
 ## Decision
 

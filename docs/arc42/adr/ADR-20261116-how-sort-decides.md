@@ -1,6 +1,6 @@
 # How `sort` decides
 
-Status: Proposed (2026-11-16)
+Status: Accepted (2026-11-24, proposed 2026-11-16)
 
 ## Decision
 

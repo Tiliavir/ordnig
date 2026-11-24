@@ -17,12 +17,3 @@ configuration and do not appear here.
 | 10 | [Quality requirements](10-quality.md) |
 | 11 | [Risks and technical debt](11-risks.md) |
 | 12 | [Glossary](12-glossary.md) |
-
-## Open questions for review
-
-Marked in the chapters as **Qn**. Answer here or in the chapter; settled ones move
-into the text or an ADR.
-
-| Q | Topic | Chapter |
-| --- | --- | --- |
-| Q15 | ADRs to accept | [9](09-decisions.md#q15) |

@@ -1,6 +1,6 @@
 # Originals stay untouched
 
-Status: Proposed (2026-11-14)
+Status: Accepted (2026-11-24, proposed 2026-11-14)
 
 ## Decision
 
