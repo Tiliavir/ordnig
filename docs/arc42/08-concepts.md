@@ -17,7 +17,7 @@ Location: `--eingang`, else `<archive>/00_Eingang`, else exactly one
 | --- | --- | --- |
 | `regeln.toml` | owner | rules, thresholds, ignored folders, year patterns |
 | `texte.json.gz` | `sort` (also in preview) | cached texts of the archive by size and mtime |
-| `protokoll.csv` | `sort --apply` | every filed file, copy and `_Prüfen` decision |
+| `protokoll.csv` | `sort --apply` | every filed file (with SHA-256), copy and `_Prüfen` decision |
 | `migration_log.csv` | `run` | every conversion; newest row per file wins |
 | `manifest.sha256` | `run`, first `check` | checksum baseline for `verify` (`sha256sum` format) |
 | `version.json` | all writers | format of the folder and the ordnig version that set it |
@@ -75,9 +75,11 @@ truncated PDF/JPEG/PNG, broken ZIP-based files, encryption, wrong extensions
 (libmagic), bad file names (encoding, NFD, Windows-invalid, reserved names),
 empty files and folders, duplicates (SHA-256).
 
-Copies made by a rule (`kopie`) are intended duplicates: `check` reads them from
-`protokoll.csv` and lists them in their own report section, not among the duplicate
-findings ([#19](https://github.com/Tiliavir/ordnig/pull/19)).
+Copies made by a rule (`kopie`) are intended duplicates: `sort` records the SHA-256 of
+every filed document in `protokoll.csv`; `check` lists a duplicate group in its own
+report section, not among the findings, when a rule filed that content at least as
+many times. Renaming or moving a copy keeps it intended; one more identical file is a
+finding again ([ADR](adr/ADR-20261117-copies-only-through-rules.md)).
 
 ## Reports
 
