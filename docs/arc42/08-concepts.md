@@ -77,11 +77,9 @@ truncated PDF/JPEG/PNG, broken ZIP-based files, encryption, wrong extensions
 (libmagic), bad file names (encoding, NFD, Windows-invalid, reserved names),
 empty files and folders, duplicates (SHA-256).
 
-<a id="q14"></a>
-> [!IMPORTANT]
-> **Q14 – Rule copies as duplicates:** Copies made by a rule (`kopie`) are intended duplicates, but `check` lists them as
-> duplicates. Mark copies recorded in `protokoll.csv` as intended and leave them out of
-> the duplicate findings?
+Copies made by a rule (`kopie`) are intended duplicates: `check` reads them from
+`protokoll.csv` and lists them in their own report section, not among the duplicate
+findings ([#19](https://github.com/Tiliavir/ordnig/pull/19)).
 
 ## Reports
 
