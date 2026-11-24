@@ -98,6 +98,34 @@ class LogPaths(unittest.TestCase):
         self.assertEqual(json.loads((folder / "version.json").read_text())["format"], 2)
 
 
+class Mounts(unittest.TestCase):
+    """A lock on SMB with nobrl only works on this machine: warn."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); self.m = Path(self.dir.name) / "mounts"
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def warns(self, line, path="/ablage/home/00_Eingang/.ordnig/lock"):
+        self.m.write_text("overlay / overlay rw,relatime 0 0\n" + line + "\n")
+        return state.warn_local_lock(Path(path), str(self.m))
+
+    def test_nobrl_warns(self):
+        self.assertTrue(self.warns("//nas/home /ablage/home cifs rw,vers=3.1.1,nobrl,cache=strict 0 0"))
+
+    def test_cifs_with_locks_local_disk_and_other_mounts_do_not(self):
+        self.assertFalse(self.warns("//nas/home /ablage/home cifs rw,vers=3.1.1,cache=strict 0 0"))
+        self.assertFalse(self.warns("/dev/sda1 /ablage/home ext4 rw,nobrl 0 0"))
+        self.assertFalse(self.warns("//nas/home /ablage/homes cifs rw,nobrl 0 0"))   # prefix, not parent
+
+    def test_longest_mount_point_wins_and_escapes(self):
+        self.m.write_text("//nas/a /ablage cifs rw,nobrl 0 0\n/dev/sdb /ablage/my\\040home ext4 rw 0 0\n")
+        self.assertEqual(state.mount_of(Path("/ablage/my home/x"), str(self.m))[0], "ext4")
+        self.assertEqual(state.mount_of(Path("/ablage/other"), str(self.m))[0], "cifs")
+        self.m.write_text("/dev/sdb /ablage/Dokumente\\040Ü ext4 rw 0 0\n")
+        self.assertEqual(state.mount_of(Path("/ablage/Dokumente Ü/x"), str(self.m))[0], "ext4")
+
+
 class Location(unittest.TestCase):
     """One .ordnig folder for everything: in the inbox, also when shares are mounted below /ablage."""
     def setUp(self):

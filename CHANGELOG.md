@@ -18,6 +18,11 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   log; paths outside the current archive stay as they are and are reported. Older
   ordnig versions refuse a lifted folder (exit 2).
 
+### Added
+
+- Warning when the state folder lies on an SMB/cifs mount with `nobrl`: the lock then
+  only works on this machine, a run on another machine is not prevented.
+
 ## [0.8.1] - 2026-11-22
 
 ### Changed

@@ -15,7 +15,7 @@ weil der Container auf verschiedenen Rechnern und in verschiedenen Versionen lä
 Ablage ohne Eingang behält ihn im Wurzelordner. Er hält eine Sperre (lock) und seine
 Formatversion (version.json).
 """
-import csv, fcntl, json, os, shutil, socket, sys, time
+import csv, fcntl, json, os, re, shutil, socket, sys, time
 from pathlib import Path
 
 OK, FEHLER, SETUP, GESPERRT, PRUEFEN = 0, 1, 2, 3, 4
@@ -106,10 +106,40 @@ def lock(path: Path):
         print(f"{path.parent} wird gerade von einem anderen ordnig-Lauf benutzt ({holder}).\n"
               f"Warten, bis er fertig ist.", file=sys.stderr)
         raise SystemExit(GESPERRT)
+    warn_local_lock(path)
     os.ftruncate(fd, 0)
     os.pwrite(fd, f"Rechner {socket.gethostname()}, PID {os.getpid()}, "
                   f"seit {time.strftime('%Y-%m-%d %H:%M:%S')}\n".encode(), 0)
     _held.append(fd)
+
+
+def mount_of(path: Path, mounts="/proc/self/mounts"):
+    """(Dateisystem, Optionen) des Mounts, auf dem path liegt; None, wenn unbekannt."""
+    try:
+        lines = Path(mounts).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    path, best = str(Path(path).resolve()), None
+    for line in lines:
+        f = line.split()
+        if len(f) < 4:
+            continue
+        point = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), f[1])   # \040 = Leerzeichen
+        inside = path == point or path.startswith(point.rstrip("/") + "/")
+        if inside and (best is None or len(point) >= len(best[0])):
+            best = (point, f[2], set(f[3].split(",")))
+    return best[1:] if best else None
+
+
+def warn_local_lock(path: Path, mounts="/proc/self/mounts"):
+    """SMB/cifs mit nobrl gibt Sperren nicht an den Server weiter: sie gelten nur auf diesem Rechner."""
+    m = mount_of(path, mounts)
+    if m and m[0] in ("cifs", "smb3") and "nobrl" in m[1]:
+        print(f"Warnung: {path.parent} liegt auf einem SMB-Mount mit nobrl. Die Sperre gilt nur auf "
+              f"diesem Rechner; ein Lauf auf einem anderen Rechner wird nicht verhindert.\n"
+              f"Ohne nobrl mounten, wenn ordnig auf mehreren Rechnern läuft.", file=sys.stderr)
+        return True
+    return False
 
 
 def check_format(folder: Path, root: Path = None):
