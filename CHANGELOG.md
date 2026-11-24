@@ -20,6 +20,9 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 
 ### Added
 
+- `check` lists copies made by a `sort` rule (`kopie`) as intended duplicates in their
+  own report section (⎘ in the tree, `gewollt = ja` in `duplicates.csv`, `copy` column
+  in `files.csv`); the duplicate findings and the redundant size leave them out.
 - Warning when the state folder lies on an SMB/cifs mount with `nobrl`: the lock then
   only works on this machine, a run on another machine is not prevented.
 
