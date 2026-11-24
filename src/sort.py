@@ -41,7 +41,7 @@ migrate, state = _load("migrate"), _load("state")
 
 REVIEW = "_Prüfen"
 STATE = ".ordnig"
-SKIP_DIRS = migrate.SKIP_DIRS | {"OneNote_RecycleBin"}
+SKIP_DIRS = state.SYSTEM_DIRS
 YEAR_DIR = re.compile(r"(19|20)\d\d")
 JAHR = "{jahr}"
 MIN_WORDS = 8            # weniger Wörter: kein brauchbarer Text

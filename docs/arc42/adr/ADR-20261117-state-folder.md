@@ -16,6 +16,10 @@ Status: Proposed (2026-11-17)
    Several mounts keep their names below the root (`-v <share>:/ablage/<name>`); the
    name is part of the relative path. State format 2 lifts existing logs; paths
    outside the current archive stay absolute and are reported.
+4. **Checksum baseline** (2026-11-23): the baseline for `verify` is state like the logs:
+   `.ordnig/manifest.sha256`, written by `run` and by the first `check`. Each check
+   still leaves its own copy in its report folder. A baseline in `/report` (up to 0.8)
+   is taken over.
 
 ## Why
 
@@ -27,3 +31,7 @@ Status: Proposed (2026-11-17)
    guessed.
 3. The container cannot know host paths, and container paths change with the mount
    point. Relative paths survive both; the checksum manifest already works this way.
+4. The baseline must survive changes of host and container like all other state, and
+   the archive's backup then keeps versions of it. Keeping it on the same storage does
+   not hide damage: a corrupted line shows up as a changed file (a false alarm), and
+   the copies in the report folders stay off the storage.

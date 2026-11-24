@@ -19,11 +19,14 @@ Location: `--eingang`, else `<archive>/00_Eingang`, else exactly one
 | `texte.json.gz` | `sort` (also in preview) | cached texts of the archive by size and mtime |
 | `protokoll.csv` | `sort --apply` | every filed file, copy and `_Prüfen` decision |
 | `migration_log.csv` | `run` | every conversion; newest row per file wins |
+| `manifest.sha256` | `run`, first `check` | checksum baseline for `verify` (`sha256sum` format) |
 | `version.json` | all writers | format of the folder and the ordnig version that set it |
 | `lock` | all writers | POSIX lock for the whole run; names the holder |
 
 A log at the old place (`<archive>/.ordnig/`, up to 0.7) is read and taken over at
-the next `run`; the original stays as `….übernommen`. A newer ordnig lifts an older
+the next `run`; the original stays as `….übernommen`. A baseline in `/report` (up to
+0.8) is copied into `.ordnig` by the next `check`, `run` or `verify`
+([ADR](adr/ADR-20261117-state-folder.md)). A newer ordnig lifts an older
 format step by step; an older ordnig refuses a newer one (exit 2).
 
 Paths in `migration_log.csv` are relative to the archive root, so the log survives any

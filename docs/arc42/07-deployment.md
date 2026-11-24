@@ -33,8 +33,8 @@ Requirements:
 - **Locks across machines:** the storage must support POSIX locks (local disk,
   NFS with lockd, SMB/cifs without `nobrl`); otherwise two hosts may run at once.
   ordnig warns when its state folder lies on a cifs mount with `nobrl`.
-- **Checksum baseline:** `/report/manifest.sha256` must be kept outside the archive
-  and backed up; without it `verify` has nothing to compare with.
+- **Versioned backup of the archive:** it also holds `.ordnig` with the checksum
+  baseline. `verify` finds damage; repairing it needs a backup version older than the damage.
 - **Same mount names every run:** the mount point may change, the names below it may not ([ADR](adr/ADR-20261117-state-folder.md)).
 - **Unmounted storage:** Docker creates an empty folder for a missing host path;
   the mount guard stops `sort` then ([8](08-concepts.md#mount-guard)).

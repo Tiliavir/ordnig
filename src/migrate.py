@@ -49,7 +49,7 @@ ODF = {"odt": "odt", "ods": "ods", "odp": "odp", "fodt": "odt", "fods": "ods", "
 ODF_FOR = {**{e: "odt" for e in TEXT - {"txt"}}, **{e: "ods" for e in CALC - {"dbf"}},
            **{e: "odp" for e in IMPRESS}}
 PDF_FILTER = {"odt": "writer_pdf_Export", "ods": "calc_pdf_Export", "odp": "impress_pdf_Export"}
-SKIP_DIRS = {"@eaDir", "#recycle", ".git", ".ordnig"}
+SKIP_DIRS = state.SYSTEM_DIRS
 LOG_NAME = state.LOG_NAME
 LOG_FIELDS = ["quelle", "aktion", "ziel", "status", "pdfa", "hinweis", "zeit", "sekunden"]
 VERA_BATCH = 50
