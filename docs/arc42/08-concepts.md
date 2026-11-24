@@ -63,11 +63,7 @@ an unmounted share. `--ablage-geaendert` accepts a real reorganisation.
   via OCR; ODF/OOXML from XML; legacy office via LibreOffice; `.eml` subject and
   body; text and HTML.
 
-<a id="q8"></a>
-> [!IMPORTANT]
-> **Q8 – Thresholds:** The defaults `anteil` 0.7 and `aehnlichkeit` 0.2 are a first guess. Each owner tunes
-> them with `sort --eval`. Should the default aim at a fixed error rate (e.g. ≤ 2 % wrongly
-> filed, more in the review folder), and should `--eval` suggest the values?
+Defaults `anteil` 0.7 and `aehnlichkeit` 0.2; each owner tunes them with `sort --eval`.
 
 ## Format assessment (`check`)
 
