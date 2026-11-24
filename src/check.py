@@ -569,7 +569,7 @@ def main():
     if copy_groups:
         L += ["", "### Gewollte Duplikate", "", f"{num(len(copy_groups))} Gruppen, die `sort` per Regel (`kopie`) "
               "mehrfach abgelegt hat. Im Baum mit ⎘ markiert, in `duplicates.csv` mit `gewollt = ja`.", ""]
-        L += [f"- " + " = ".join(f"`{q.relative_to(root)}`" for q in g) for g in copy_groups[:200]]
+        L += ["- " + " = ".join(f"`{q}`" for q in sorted(str(q.relative_to(root)) for q in g)) for g in copy_groups[:200]]
         if len(copy_groups) > 200: L.append(f"- … {num(len(copy_groups) - 200)} weitere")
     if years:
         L += ["", "### Dateien nach Änderungsjahr", "", "```text"]
