@@ -125,6 +125,14 @@ for f in texte.json.gz protokoll.csv version.json; do
 done
 ORDNIG_SRC=$S ordnig sort --eval | grep -q 'Jahr richtig' || fail "sort --eval"
 
+# check: the rule copy stays intended after a rename (matched by content), not a duplicate finding
+mv "$S/Versicherung/beitrag.pdf" "$S/Versicherung/beitrag-2026.pdf"
+mkdir -p "$W/check-sort"
+ORDNIG_SRC=$S ORDNIG_OUT=$W/check-sort ordnig check > /dev/null
+rep=$(echo "$W"/check-sort/*-check/report.md)
+grep -qF "\`Steuer/2026/beitrag.pdf\` = \`Versicherung/beitrag-2026.pdf\`" "$rep" || fail "check: renamed rule copy not intended"
+! grep 'beitrag' "$rep" | grep -q '⧉' || fail "check: rule copy reported as duplicate"
+
 # verify: a changed file is exit code 1 (for cron/systemd)
 echo x >> "$ORDNIG_SRC/Briefe/konto.xls"
 rc=0; ordnig verify > /dev/null || rc=$?

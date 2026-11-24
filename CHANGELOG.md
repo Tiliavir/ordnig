@@ -23,6 +23,10 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 - `check` lists copies made by a `sort` rule (`kopie`) as intended duplicates in their
   own report section (⎘ in the tree, `gewollt = ja` in `duplicates.csv`, `copy` column
   in `files.csv`); the duplicate findings and the redundant size leave them out.
+  They are recognised by content: `sort` records the SHA-256 of every filed document
+  in `protokoll.csv`, so renaming or moving a copy keeps it intended; one more
+  identical file is a duplicate again. A `protokoll.csv` from an older version is not
+  migrated: `sort --apply` stops (exit 2) until it is moved away.
 - Warning when the state folder lies on an SMB/cifs mount with `nobrl`: the lock then
   only works on this machine, a run on another machine is not prevented.
 

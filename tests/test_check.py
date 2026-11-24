@@ -136,10 +136,7 @@ class Inbox(unittest.TestCase):
         for rel in ("docs/rechnung.pdf", "steuer/rechnung.pdf"):
             (self.root / rel).write_text("same")
         (self.root / "docs" / "zufall.txt").write_text("a")            # same as docs/a.txt: not intended
-        state = self.root / "home" / "00_Eingang" / ".ordnig"; state.mkdir()
-        (state / "protokoll.csv").write_text(
-            "datei,status,nach,kopien,quelle,grund,vorschlag,zeit\n"
-            "rechnung.pdf,abgelegt,docs/rechnung.pdf,steuer/rechnung.pdf,regel,Regel x,,2026-11-24\n", encoding="utf-8")
+        self.log_rule_copy("docs/rechnung.pdf", "steuer/rechnung.pdf", "same")
         self.assertEqual(self.check().returncode, 0)
         dups = (self.out / "duplicates.csv").read_text().splitlines()
         self.assertIn("docs/rechnung.pdf,ja", "\n".join(dups))
@@ -147,6 +144,33 @@ class Inbox(unittest.TestCase):
         report = (self.out / "report.md").read_text()
         self.assertIn("1 Gruppen, ", report.split("### Duplikate")[1].split("###")[0])
         self.assertIn("`docs/rechnung.pdf` = `steuer/rechnung.pdf`", report.split("### Gewollte Duplikate")[1])
+
+    def log_rule_copy(self, nach, kopie, content):
+        import hashlib
+        state = self.root / "home" / "00_Eingang" / ".ordnig"; state.mkdir(exist_ok=True)
+        (state / "protokoll.csv").write_text(
+            "zeit,datei,status,nach,kopien,quelle,grund,sha256\n"
+            f"2026-11-24,x.pdf,abgelegt,{nach},{kopie},Regel x,,{hashlib.sha256(content.encode()).hexdigest()}\n",
+            encoding="utf-8")
+
+    def gewollt(self):
+        return [l for l in (self.out / "duplicates.csv").read_text().splitlines() if l.endswith(",ja")]
+
+    def test_rule_copy_stays_intended_after_rename(self):
+        (self.root / "steuer").mkdir()
+        (self.root / "docs" / "umbenannt.pdf").write_text("same")      # filed as docs/rechnung.pdf, then renamed
+        (self.root / "steuer" / "rechnung.pdf").write_text("same")
+        self.log_rule_copy("docs/rechnung.pdf", "steuer/rechnung.pdf", "same")
+        self.assertEqual(self.check().returncode, 0)
+        self.assertEqual(len(self.gewollt()), 2)
+
+    def test_one_more_identical_file_is_a_finding(self):
+        (self.root / "steuer").mkdir()
+        for rel in ("docs/rechnung.pdf", "steuer/rechnung.pdf", "docs/nochmal.pdf"):
+            (self.root / rel).write_text("same")
+        self.log_rule_copy("docs/rechnung.pdf", "steuer/rechnung.pdf", "same")
+        self.assertEqual(self.check().returncode, 0)
+        self.assertEqual(self.gewollt(), [])
 
 
 class Format(unittest.TestCase):
