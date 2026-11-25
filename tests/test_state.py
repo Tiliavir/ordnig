@@ -138,30 +138,26 @@ class Mounts(unittest.TestCase):
 
 
 class Location(unittest.TestCase):
-    """One .ordnig folder for everything: in the inbox, also when shares are mounted below /archive."""
+    """The inbox is <archive>/Inbox or --inbox, never searched for; .ordnig lives in it."""
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory(); self.root = Path(self.dir.name)
 
     def tearDown(self):
         self.dir.cleanup()
 
-    def test_default_inbox_or_none(self):
-        self.assertEqual(state.state_dir(self.root), self.root / ".ordnig")          # no inbox
-        (self.root / "Inbox").mkdir()
+    def test_default_or_parameter(self):
         self.assertEqual(state.state_dir(self.root), (self.root / "Inbox/.ordnig").resolve())
-        self.assertEqual(state.find_inbox(self.root, self.root / "x"), (self.root / "x").resolve())
+        self.assertEqual(state.inbox_dir(self.root, self.root / "home/Post"), (self.root / "home/Post").resolve())
 
-    def test_any_folder_holding_ordnig_is_the_inbox(self):
-        (self.root / "Inbox").mkdir()
-        (self.root / "home/00_Eingang/.ordnig").mkdir(parents=True)                # own name, in a share
-        self.assertEqual(state.find_inbox(self.root), (self.root / "home/00_Eingang").resolve())
+    def test_no_search(self):
+        (self.root / "home/00_Eingang/.ordnig").mkdir(parents=True)                # not found by its state
+        self.assertEqual(state.inbox_dir(self.root), (self.root / "Inbox").resolve())
 
-    def test_two_inboxes_need_a_choice(self):
-        for share in ("home", "documents"):
-            (self.root / share / "Post" / ".ordnig").mkdir(parents=True)
+    def test_missing_inbox_is_not_created(self):
         with self.assertRaises(SystemExit) as e:
-            state.find_inbox(self.root)
-        self.assertIn("--inbox", str(e.exception))
+            state.need_inbox(self.root / "Inbox")
+        self.assertEqual(e.exception.code, state.SETUP)
+        self.assertFalse((self.root / "Inbox").exists())
 
 
 if __name__ == "__main__":

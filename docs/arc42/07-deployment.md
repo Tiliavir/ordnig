@@ -20,7 +20,7 @@ flowchart LR
 | On the NAS | Enough CPU and RAM; simplest | Task scheduler of the NAS starts it. |
 | On a workstation, storage mounted | Faster CPU for OCR and conversions | Shares mounted on the host; runs only while it is on. |
 | One archive mount | Archive in one share | `-v <archive>:/archive` |
-| Several mounts | Archive spread over shares | `-v <share>:/archive/<name>` each, always with the same names; the inbox in a share is found by its `.ordnig/` folder; the first time pass `--inbox`. |
+| Several mounts | Archive spread over shares | `-v <share>:/archive/<name>` each, always with the same names; pass the inbox with `--inbox /archive/<name>/<folder>` (default `/archive/Inbox`). |
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \

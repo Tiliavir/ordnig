@@ -10,9 +10,9 @@ Exit codes (for cron, systemd and scripts):
   4  sort: done, but files wait in the review folder
   (bit rot check: 1 if files changed or are missing)
 
-There is one .ordnig folder for everything that stays between runs: in the inbox, because
-the container runs on different machines and in different versions. Only an archive without
-inbox keeps it in its root. It holds a lock and its format version (version.json).
+There is one .ordnig folder for everything that stays between runs: in the inbox
+(<archive>/Inbox or --inbox), because the container runs on different machines and in
+different versions. It holds a lock and its format version (version.json).
 """
 import fcntl, json, os, re, socket, sys, time
 from pathlib import Path
@@ -52,30 +52,19 @@ def ordnig_version():
     return "dev"
 
 
-def find_inbox(root: Path, inbox=None):
-    """The inbox: --inbox, else the one folder one or two levels below the archive that holds
-    .ordnig/, else <archive>/Inbox. None if there is none."""
-    if inbox:
-        return Path(inbox).resolve()
-    if not root.is_dir():
-        return None
-    def subdirs(d):
-        try:
-            return [c for c in d.iterdir() if c.is_dir() and not c.is_symlink() and c.name not in SYSTEM_DIRS]
-        except OSError:
-            return []
-    level1 = subdirs(root)
-    found = sorted(d for d in level1 + [c for d in level1 for c in subdirs(d)] if (d / STATE).is_dir())
-    if len(found) > 1:
-        sys.exit(f"Several inboxes (folders with {STATE}/): {', '.join(map(str, found))} – choose one with --inbox")
-    if found:
-        return found[0].resolve()
-    return (root / INBOX).resolve() if (root / INBOX).is_dir() else None
+def inbox_dir(root: Path, inbox=None):
+    """The inbox: --inbox, else <archive>/Inbox. Never searched for."""
+    return Path(inbox).resolve() if inbox else (root / INBOX).resolve()
 
 
 def state_dir(root: Path, inbox=None):
-    found = find_inbox(root, inbox)
-    return found / STATE if found else root / STATE
+    return inbox_dir(root, inbox) / STATE
+
+
+def need_inbox(inbox: Path):
+    """Writers keep their state in the inbox; a missing inbox is not created (wrong mount?)."""
+    if not inbox.is_dir():
+        stop(f"Inbox missing: {inbox} – create it or pass --inbox PATH.")
 
 
 def open_state(folder: Path, root: Path = None):

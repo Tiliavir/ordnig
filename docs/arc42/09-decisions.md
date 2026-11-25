@@ -16,5 +16,6 @@ Accepted ADRs on `main` are immutable; a change is a new ADR that supersedes the
 | 2026-11-17 | [Copies only through rules](adr/ADR-20261117-copies-only-through-rules.md) | Accepted |
 | 2026-11-17 | [State folder](adr/ADR-20261117-state-folder.md) | Accepted, partly superseded |
 | 2026-11-18 | [Safe unattended runs](adr/ADR-20261118-unattended-runs.md) | Accepted |
-| 2026-11-23 | [English throughout, folder names are configuration](adr/ADR-20261123-english-ui-configurable-folders.md) | Accepted |
+| 2026-11-23 | [English throughout, folder names are configuration](adr/ADR-20261123-english-ui-configurable-folders.md) | Accepted, partly superseded |
 | 2026-11-25 | [No migrations before production](adr/ADR-20261125-no-migrations-before-production.md) | Proposed |
+| 2026-11-25 | [Defaults, no searching](adr/ADR-20261125-defaults-no-searching.md) | Proposed |

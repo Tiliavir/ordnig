@@ -387,7 +387,8 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     progress(f"Scanning {root} …")
-    inbox = state.find_inbox(root, args.inbox)
+    inbox = state.inbox_dir(root, args.inbox)
+    inbox = inbox if inbox.is_dir() else None
     skip = [inbox] if inbox and inbox != root else []
     paths, empty_dirs, dir_errors, case_map = scan(root, args, skip)
     progress(f"{num(len(paths))} files, detecting types …")

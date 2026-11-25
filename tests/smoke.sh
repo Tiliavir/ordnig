@@ -5,7 +5,7 @@ set -euo pipefail
 
 W=$(mktemp -d)
 export ORDNIG_SRC=$W/archive ORDNIG_OUT=$W/report
-mkdir -p "$ORDNIG_SRC/Briefe" "$ORDNIG_SRC/Scans" "$W/gen"
+mkdir -p "$ORDNIG_SRC/Briefe" "$ORDNIG_SRC/Scans" "$ORDNIG_SRC/Inbox" "$W/gen"
 cd "$W/gen"
 
 printf 'Sehr geehrte Damen und Herren,\n\nhiermit kündige ich zum 31. März.\nGrüße\n' > brief.txt
@@ -51,7 +51,7 @@ grep -q 4711 <<<"$ocr" || fail "OCR text missing"
 gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Briefe/kuendigung.pdf" | grep -q 'kündige' \
   || fail "umlauts lost in office PDF"
 
-log=$ORDNIG_SRC/.ordnig/run-log.csv
+log=$ORDNIG_SRC/Inbox/.ordnig/run-log.csv
 grep -q ',error,' "$log" && { cat "$log"; fail "conversion errors"; }
 grep -q 'single checks' "$log" && { cat "$log"; fail "veraPDF batch output not parsed"; }
 grep -q "$ORDNIG_SRC/" "$log" && { cat "$log"; fail "log stores container paths, not paths relative to the archive"; }
@@ -68,8 +68,13 @@ ordnig run --images png >/dev/null
 
 ordnig verify >/dev/null
 grep -q 'Content changed: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
-[[ -s $ORDNIG_SRC/.ordnig/version.json ]] || fail "run: missing .ordnig/version.json"
-[[ -s $ORDNIG_SRC/.ordnig/manifest.sha256 ]] || fail "run: checksums not stored in .ordnig"
+[[ -s $ORDNIG_SRC/Inbox/.ordnig/version.json ]] || fail "run: missing Inbox/.ordnig/version.json"
+[[ -s $ORDNIG_SRC/Inbox/.ordnig/manifest.sha256 ]] || fail "run: checksums not stored in .ordnig"
+
+# no inbox: run stops (exit 2) instead of searching or creating one
+mkdir -p "$W/noinbox/Briefe"; echo x > "$W/noinbox/Briefe/a.txt"
+rc=0; ORDNIG_SRC=$W/noinbox ordnig run > /dev/null 2>&1 || rc=$?
+[[ $rc == 2 && ! -e $W/noinbox/Inbox ]] || fail "run without inbox: exit $rc, expected 2 and no Inbox created"
 [[ ! -e $ORDNIG_OUT/manifest.sha256 ]] || fail "run: checksums stored in /report"
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"

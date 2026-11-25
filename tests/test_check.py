@@ -102,7 +102,7 @@ class Inbox(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory(); d = Path(self.dir.name)
         self.root, self.out = d / "archive", d / "report"
-        (self.root / "home" / "Inbox" / ".ordnig").mkdir(parents=True)    # a share's inbox is found by its state
+        (self.root / "home" / "Inbox" / ".ordnig").mkdir(parents=True)
         (self.root / "docs").mkdir()
         (self.root / "docs" / "a.txt").write_text("a")
         (self.root / "home" / "Inbox" / "brief.txt").write_text("b")
@@ -113,6 +113,7 @@ class Inbox(unittest.TestCase):
     def check(self, *extra):
         import subprocess, sys
         return subprocess.run([sys.executable, str(SRC / "check.py"), str(self.root), "--out", str(self.out),
+                               "--inbox", str(self.root / "home" / "Inbox"),   # in a share: never searched for
                                "--quiet", "--no-integrity", *extra], capture_output=True, text=True)
 
     def manifest(self):

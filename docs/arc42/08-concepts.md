@@ -10,10 +10,9 @@
 
 ## State: one `.ordnig` folder
 
-Location: in the inbox, found as `--inbox`, else the one folder one or two levels
-below the archive that holds `.ordnig/`, else `<archive>/Inbox`; only an archive
-without inbox keeps it in `<archive>/.ordnig/`
-([ADR](adr/ADR-20261123-english-ui-configurable-folders.md)).
+Location: always `<inbox>/.ordnig/`; the inbox is `<archive>/Inbox` or `--inbox`,
+never searched for. Writers stop (exit 2) when the inbox is missing
+([ADR](adr/ADR-20261125-defaults-no-searching.md)).
 
 | File | Written by | Content |
 | --- | --- | --- |
@@ -41,7 +40,7 @@ mount point ([ADR](adr/ADR-20261117-state-folder.md)).
 | ---: | --- |
 | 0 | done |
 | 1 | errors in single files (`sort`, `run`), changed or missing files (`verify`), crash |
-| 2 | wrong call or setup: not mounted, read-only, tools missing, bad `rules.toml`, state of another format |
+| 2 | wrong call or setup: not mounted, inbox missing, read-only, tools missing, bad `rules.toml`, state of another format |
 | 3 | another run holds the lock |
 | 4 | `sort` done, but files wait in the review folder |
 

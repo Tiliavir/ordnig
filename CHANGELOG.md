@@ -12,9 +12,10 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
   values, the rules file and the container mount are English; folder names are
   configuration ([ADR](docs/arc42/adr/ADR-20261123-english-ui-configurable-folders.md)):
   - Mount `/archive` (was `/ablage`); options `--inbox`, `--archive-changed`, `--sample`.
-  - Inbox: `--inbox`, else the folder one or two levels below the archive that holds
-    `.ordnig/`, else `<archive>/Inbox`. An existing `00_Eingang` keeps working once it
-    holds `.ordnig/`, or with `--inbox`.
+  - Inbox: `<archive>/Inbox` or `--inbox PATH`, no longer searched for; the state is
+    always `<inbox>/.ordnig/` ([ADR](docs/arc42/adr/ADR-20261125-defaults-no-searching.md)).
+    `run` and `sort --apply` stop (exit 2) when the inbox is missing instead of falling
+    back to `<archive>/.ordnig/`. For `00_Eingang` pass `--inbox`.
   - Review folder `_Review`, configurable as `[folders] review` in `rules.toml`.
   - State files `rules.toml`, `sort-log.csv`, `run-log.csv`, `texts.json.gz`; rule keys
     `ignore`, `[thresholds]` (`share`, `similarity`), `[year]`, `[[rule]]` with

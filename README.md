@@ -44,7 +44,7 @@ docker run --rm -v /volume1/archive:/archive:ro -v "$PWD/report:/report" \
 
 ### Sort the inbox
 
-`sort` files new documents from the inbox (`Inbox`, or any folder with `--inbox`)
+`sort` files new documents from the inbox (`<archive>/Inbox`, or any folder with `--inbox`)
 into the archive. It learns from the archive itself (every folder is a class, year
 folders become `{year}`) and follows your rules in `<inbox>/.ordnig/rules.toml`
 first ([example](docs/rules.example.toml)). Anything it is unsure about goes to
@@ -72,7 +72,7 @@ script) or a cron job, and read the table it prints (the task can mail it):
 ```
 
 `run` can be interrupted and restarted; it continues where it stopped
-(state in `<inbox>/.ordnig/`, without inbox in `<archive>/.ordnig/`). More options: `… ordnig help`; tool versions: `… ordnig version`.
+(state in `<inbox>/.ordnig/`; `run` and `sort` need the inbox to exist). More options: `… ordnig help`; tool versions: `… ordnig version`.
 The checksums live in `<inbox>/.ordnig/manifest.sha256`, so they travel with the archive and its backup; each check also leaves a copy in its report folder.
 
 Details: [architecture (arc42)](docs/arc42/README.md) · [changelog](CHANGELOG.md) ·

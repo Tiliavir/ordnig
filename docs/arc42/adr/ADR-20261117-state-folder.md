@@ -2,7 +2,8 @@
 
 Status: Accepted (2026-11-24, proposed 2026-11-17)
 
-Points 2 and 3 partly superseded by [No migrations before production](ADR-20261125-no-migrations-before-production.md).
+Point 1 partly superseded by [Defaults, no searching](ADR-20261125-defaults-no-searching.md);
+points 2 and 3 partly by [No migrations before production](ADR-20261125-no-migrations-before-production.md).
 
 ## Decision
 

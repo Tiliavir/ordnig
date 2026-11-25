@@ -24,12 +24,12 @@ Options for run (passed to the converter):
   --lang deu+eng     Tesseract languages (default deu+eng; also: frk, fra, ita)
   --fix-scans        rotate and deskew scans (about 40% more OCR time)
   -j N               files in parallel (default: number of CPUs)
-  --inbox PATH       inbox (default: the folder holding .ordnig/, else $SRC/Inbox)
+  --inbox PATH       inbox (default $SRC/Inbox)
 
 Options for sort:
   --apply            really move the files (otherwise preview)
   --eval             measure on the archive itself how well sorting works
-  --inbox PATH       inbox (default: the folder holding .ordnig/, else $SRC/Inbox)
+  --inbox PATH       inbox (default $SRC/Inbox)
   --sample N         documents for --eval (default 2000)
   --archive-changed  many known documents are gone on purpose (archive reorganised)
 
@@ -37,8 +37,8 @@ Exit codes: 0 done · 1 errors in single files (sort, run) or changed/missing fi
 (verify) · 2 wrong call or setup (not mounted, read-only, bad rules.toml, data from a
 newer or older version) · 3 another run holds the lock · 4 sort: files wait in the review folder
 
-State between runs (rules, learned texts, logs, checksums, lock) lives in <inbox>/.ordnig/;
-an archive without inbox keeps it in $SRC/.ordnig/.
+State between runs (rules, learned texts, logs, checksums, lock) lives in <inbox>/.ordnig/
+(inbox: $SRC/Inbox or --inbox; run and sort need it to exist).
 
 Mounts: archive -> $SRC, reports -> $OUT
 EOF
@@ -77,7 +77,10 @@ baseline() {
 
 store_manifest() {
   [[ -f $LAST_CHECK/manifest.sha256 ]] || return 0
-  if mkdir -p "$(dirname "$BASELINE")" 2>/dev/null && cp "$LAST_CHECK/manifest.sha256" "$BASELINE.tmp" 2>/dev/null; then
+  local inbox; inbox=$(dirname "$(dirname "$BASELINE")")
+  if [[ ! -d $inbox ]]; then
+    echo "Checksums not stored: inbox $inbox missing – create it or pass --inbox" >&2
+  elif mkdir -p "$(dirname "$BASELINE")" 2>/dev/null && cp "$LAST_CHECK/manifest.sha256" "$BASELINE.tmp" 2>/dev/null; then
     mv "$BASELINE.tmp" "$BASELINE"
   else
     echo "Checksums not stored: $(dirname "$BASELINE") not writable (archive :ro?)" >&2

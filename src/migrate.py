@@ -25,7 +25,7 @@ Usage:
   python3 migrate.py /archive                    # preview
   python3 migrate.py /archive --apply            # run
   python3 migrate.py /archive --apply --images tif,tiff --lang deu+eng -j 4
-The log is <inbox>/.ordnig/run-log.csv (without inbox <archive>/.ordnig/); repeated runs
+The log is <inbox>/.ordnig/run-log.csv (inbox: <archive>/Inbox or --inbox); repeated runs
 skip what is done and continue after errors. Its paths are relative to the archive, so
 they survive any mount layout. The inbox is not converted: sort files the mail, the next
 run converts it where it landed.
@@ -463,7 +463,7 @@ def main():
                     help="rotate and deskew scans automatically (≈ 40 %% more OCR time)")
     ap.add_argument("-j", "--jobs", type=int, default=None, help="files in parallel (default: number of CPUs)")
     ap.add_argument("--inbox", type=Path, default=None,
-                    help="inbox folder; it holds .ordnig/ (default: the folder holding .ordnig/, else <root>/Inbox)")
+                    help="inbox folder; it holds .ordnig/ (default <root>/Inbox)")
     ap.add_argument("--log", type=Path, default=None,
                     help="log (default: <inbox>/.ordnig/run-log.csv)")
     ap.add_argument("--report", type=Path, default=None, help="write a Markdown tree report")
@@ -486,8 +486,8 @@ def main():
     images = {e.strip().lower().lstrip(".") for e in args.images.split(",") if e.strip()}
     progress("Planning …")
     info = {}
-    inbox = state.find_inbox(root, args.inbox)
-    skip = [inbox] if inbox else []
+    inbox = state.inbox_dir(root, args.inbox)
+    skip = [inbox] if inbox.is_dir() else []
     jobs = plan(root, images, done, generated, info, skip)
     progress_done()
 
@@ -516,7 +516,7 @@ def main():
             table.append(("Images not planned", sum(found.values())))
         cmd, hints = suggest(images, args.lang, jobs_given, found, len(jobs), info["scan_pdfs"], args.fix_scans)
         foot = [vera_note, f"Missing tools: {', '.join(missing)}" if missing else "",
-                f"Inbox left out: {inbox} (converted after filing)" if inbox else ""]
+                f"Inbox left out: {inbox} (converted after filing)" if skip else f"No inbox at {inbox}: run --apply needs it for its state (create it or --inbox)"]
         advice = ([f"Suggestion: {cmd}", "            (same docker call, archive without :ro – take a snapshot first)"]
                   if cmd else []) + hints
         write_report(args.report, "Conversion plan", root, render_tree(root.name, notes), table,
@@ -528,6 +528,8 @@ def main():
         sys.exit(f"Missing tools: {', '.join(missing)}")
 
     t_start = time.monotonic()
+    if args.log.parent == state.state_dir(root, args.inbox):
+        state.need_inbox(inbox)
     state.open_state(args.log.parent, root)
     new_log = not args.log.exists()
     results = defaultdict(list)

@@ -2,7 +2,7 @@
 """
 sort.py – files incoming mail from the inbox into the archive.
 
-For every file in the inbox (default: <archive>/Inbox):
+For every file in the inbox (<archive>/Inbox or --inbox):
   1. Read the text: PDF (no text: OCR), image (OCR), Office/ODF, e-mail (.eml), text.
   2. Rules from <inbox>/.ordnig/rules.toml: the first match wins.
   3. Otherwise the most similar documents of the archive vote (k nearest neighbours, TF-IDF).
@@ -657,7 +657,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", type=Path)
     ap.add_argument("--inbox", type=Path, default=None,
-                    help="inbox folder (default: the folder holding .ordnig/, else <archive>/Inbox)")
+                    help="inbox folder (default <archive>/Inbox)")
     ap.add_argument("--apply", action="store_true", help="really file (otherwise preview)")
     ap.add_argument("--eval", action="store_true", help="measure accuracy on the archive")
     ap.add_argument("--sample", type=int, default=2000, help="documents for --eval (default 2000)")
@@ -668,13 +668,11 @@ def main():
                     help="many documents are gone on purpose (archive reorganised): learn anyway")
     args = ap.parse_args()
     root = args.root.resolve()
-    inbox = state.find_inbox(root, args.inbox) if root.is_dir() else None
-    inbox = inbox or root / state.INBOX
+    inbox = state.inbox_dir(root, args.inbox)
     if not root.is_dir():
         sys.exit(f"Archive missing: {root}")
     check_mounts(root)
-    if not inbox.is_dir():
-        sys.exit(f"Inbox missing: {inbox} (--inbox /path)")
+    state.need_inbox(inbox)
     if not os.access(inbox, os.W_OK):
         sys.exit(f"Inbox is read-only: {inbox} (it holds .ordnig/ with what was learned)")
     missing = [t for t in ("gs", "tesseract", "soffice") if not shutil.which(t)]
