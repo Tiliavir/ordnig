@@ -20,8 +20,8 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
     `ignore`, `[thresholds]` (`share`, `similarity`), `[year]`, `[[rule]]` with
     `target`, `any`, `all`, `none`, `year`, `copy`, `copy_year`; placeholder `{year}`
     ([example](docs/rules.example.toml)).
-  - No migration (pre-production): a `.ordnig` folder with the German file names is
-    refused (exit 2). Move it away and write `rules.toml` with the new keys.
+  - No migration before production ([ADR](docs/arc42/adr/ADR-20261125-no-migrations-before-production.md)):
+    a `.ordnig` folder with the German file names is refused (exit 2). Move it away and write `rules.toml` with the new keys.
 - `check` and `verify` skip the inbox like `run` does: unsorted mail no longer shows
   up as format risks, and filed mail no longer as "moved". Inbox entries in an older
   `manifest.sha256` are ignored, so the first `verify` after the update reports no

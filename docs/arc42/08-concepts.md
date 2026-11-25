@@ -28,7 +28,8 @@ without inbox keeps it in `<archive>/.ordnig/`
 The checksum baseline lives in `.ordnig` ([ADR](adr/ADR-20261117-state-folder.md)).
 An older ordnig refuses a newer format (exit 2). Before production nothing is
 migrated: a state folder of an older format or with the German file names of
-versions up to 0.9 is refused (exit 2) and has to be moved away.
+versions up to 0.9 is refused (exit 2) and has to be moved away
+([ADR](adr/ADR-20261125-no-migrations-before-production.md)).
 
 Paths in `run-log.csv` are relative to the archive root, so the log survives any
 mount point ([ADR](adr/ADR-20261117-state-folder.md)).

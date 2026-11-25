@@ -2,6 +2,8 @@
 
 Status: Accepted (2026-11-24, proposed 2026-11-17)
 
+Points 2 and 3 partly superseded by [No migrations before production](ADR-20261125-no-migrations-before-production.md).
+
 ## Decision
 
 1. **One folder in the inbox:** everything that must survive a run lives in
