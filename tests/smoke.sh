@@ -4,8 +4,8 @@
 set -euo pipefail
 
 W=$(mktemp -d)
-export ORDNIG_SRC=$W/ablage ORDNIG_OUT=$W/report
-mkdir -p "$ORDNIG_SRC/Briefe" "$ORDNIG_SRC/Scans" "$W/gen"
+export ORDNIG_SRC=$W/archive ORDNIG_OUT=$W/report
+mkdir -p "$ORDNIG_SRC/Briefe" "$ORDNIG_SRC/Scans" "$ORDNIG_SRC/Inbox" "$W/gen"
 cd "$W/gen"
 
 printf 'Sehr geehrte Damen und Herren,\n\nhiermit kündige ich zum 31. März.\nGrüße\n' > brief.txt
@@ -29,8 +29,8 @@ sha_before=$(sha256sum "$ORDNIG_SRC/Briefe/kuendigung.doc")
 
 ordnig version >/dev/null
 ordnig preview > "$W/preview.txt"
-grep -q 'Vorschlag: ordnig run' "$W/preview.txt" || { cat "$W/preview.txt"; echo "FAIL: no run suggestion"; exit 1; }
-grep -q 'Falls Scans: --images png' "$W/preview.txt" || { cat "$W/preview.txt"; echo "FAIL: png not hinted"; exit 1; }
+grep -q 'Suggestion: ordnig run' "$W/preview.txt" || { cat "$W/preview.txt"; echo "FAIL: no run suggestion"; exit 1; }
+grep -q 'If they are scans: --images png' "$W/preview.txt" || { cat "$W/preview.txt"; echo "FAIL: png not hinted"; exit 1; }
 [[ -z $(find "$ORDNIG_SRC" -newer "$ORDNIG_SRC/Briefe/konto.xls" -type f) ]] || { echo "FAIL: preview wrote files"; exit 1; }
 
 ordnig run --images png
@@ -44,16 +44,16 @@ done
 [[ ! -e $ORDNIG_SRC/Briefe/schon_pdfa_pdfa.pdf ]] || fail "existing PDF/A was converted again"
 python3 -I -c 'import pikepdf,sys; p = pikepdf.open(sys.argv[1]); sys.exit(0 if "/StructTreeRoot" in p.Root else 1)' \
   "$ORDNIG_SRC/Briefe/kuendigung.pdf" || fail "office PDF lost its tagging"
-grep -q 'Langsamste Dateien' "$ORDNIG_OUT"/*-migration.md || fail "timing missing in report"
+grep -q 'Slowest files' "$ORDNIG_OUT"/*-migration.md || fail "timing missing in report"
 
 ocr=$(gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Scans/scan_ohne_text_pdfa.pdf")
 grep -q 4711 <<<"$ocr" || fail "OCR text missing"
 gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -o - "$ORDNIG_SRC/Briefe/kuendigung.pdf" | grep -q 'kündige' \
   || fail "umlauts lost in office PDF"
 
-log=$ORDNIG_SRC/.ordnig/migration_log.csv
-grep -q ',fehler,' "$log" && { cat "$log"; fail "conversion errors"; }
-grep -q 'Einzelprüfung' "$log" && { cat "$log"; fail "veraPDF batch output not parsed"; }
+log=$ORDNIG_SRC/Inbox/.ordnig/run-log.csv
+grep -q ',error,' "$log" && { cat "$log"; fail "conversion errors"; }
+grep -q 'single checks' "$log" && { cat "$log"; fail "veraPDF batch output not parsed"; }
 grep -q "$ORDNIG_SRC/" "$log" && { cat "$log"; fail "log stores container paths, not paths relative to the archive"; }
 if command -v verapdf >/dev/null; then
   # newest row per target wins (pending row first, verdict appended after the veraPDF batch)
@@ -67,16 +67,21 @@ ordnig run --images png >/dev/null
 [[ $(find "$ORDNIG_SRC" -type f | wc -l) == "$before" ]] || fail "second run created files"
 
 ordnig verify >/dev/null
-grep -q 'Inhalt geändert: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
-[[ -s $ORDNIG_SRC/.ordnig/version.json ]] || fail "run: missing .ordnig/version.json"
-[[ -s $ORDNIG_SRC/.ordnig/manifest.sha256 ]] || fail "run: checksums not stored in .ordnig"
+grep -q 'Content changed: 0' "$ORDNIG_OUT"/*-verify/report.md || fail "verify reports changes"
+[[ -s $ORDNIG_SRC/Inbox/.ordnig/version.json ]] || fail "run: missing Inbox/.ordnig/version.json"
+[[ -s $ORDNIG_SRC/Inbox/.ordnig/manifest.sha256 ]] || fail "run: checksums not stored in .ordnig"
+
+# no inbox: run stops (exit 2) instead of searching or creating one
+mkdir -p "$W/noinbox/Briefe"; echo x > "$W/noinbox/Briefe/a.txt"
+rc=0; ORDNIG_SRC=$W/noinbox ordnig run > /dev/null 2>&1 || rc=$?
+[[ $rc == 2 && ! -e $W/noinbox/Inbox ]] || fail "run without inbox: exit $rc, expected 2 and no Inbox created"
 [[ ! -e $ORDNIG_OUT/manifest.sha256 ]] || fail "run: checksums stored in /report"
 grep -q '├── Briefe/' "$ORDNIG_OUT"/*-after/report.md || fail "tree missing in report"
 grep -q '✓ kuendigung.odt' "$ORDNIG_OUT"/*-migration.md || fail "tree missing in migration report"
 
 # ---------------------------------------------------------------- sort: inbox -> archive
-S=$W/sort/ablage
-mkdir -p "$S/Bank/2025" "$S/Versicherung" "$S/Steuer" "$S/00_Eingang/.ordnig" "$W/sortgen"
+S=$W/sort/archive
+mkdir -p "$S/Bank/2025" "$S/Versicherung" "$S/Steuer" "$S/Inbox/.ordnig" "$W/sortgen"
 cd "$W/sortgen"
 bank="Deutsche Kreditbank AG Kontoauszug Girokonto Buchungen Lastschrift Gutschrift Saldo Kontonummer 1234567"
 vers="Hausratversicherung Versicherungsschein Beitragsrechnung Versicherungsnummer 7766554 Ihre Police Schaden"
@@ -88,28 +93,28 @@ printf '%s\nDatum 03.11.2026\n' "$bank" > neu.txt
 printf '%s\nJahresbeitrag Datum 05.01.2026\n' "$vers" > jahr.txt
 soffice --headless --convert-to pdf konto*.txt vers*.txt neu.txt jahr.txt >/dev/null
 mv konto*.pdf "$S/Bank/2025/"; mv vers*.pdf "$S/Versicherung/"
-cp neu.pdf "$S/00_Eingang/auszug.pdf"
-cp jahr.pdf "$S/00_Eingang/beitrag.pdf"
-cat > "$S/00_Eingang/.ordnig/regeln.toml" <<'EOF'
-[[regel]]
+cp neu.pdf "$S/Inbox/auszug.pdf"
+cp jahr.pdf "$S/Inbox/beitrag.pdf"
+cat > "$S/Inbox/.ordnig/rules.toml" <<'EOF'
+[[rule]]
 name = "Jahresbeitrag"
-ziel = "Versicherung"
-alle = ['Hausratversicherung', 'Jahresbeitrag']
-kopie = "Steuer/{jahr}"
+target = "Versicherung"
+all = ['Hausratversicherung', 'Jahresbeitrag']
+copy = "Steuer/{year}"
 EOF
-gs -q -dNOPAUSE -dBATCH -sDEVICE=pnggray -r300 -o "$S/00_Eingang/scan.png" neu.pdf
-cp "$S/Bank/2025/konto1.pdf" "$S/00_Eingang/doppelt.pdf"
-printf 'PK\005\006%018d' 0 > "$S/00_Eingang/archiv.zip"
+gs -q -dNOPAUSE -dBATCH -sDEVICE=pnggray -r300 -o "$S/Inbox/scan.png" neu.pdf
+cp "$S/Bank/2025/konto1.pdf" "$S/Inbox/doppelt.pdf"
+printf 'PK\005\006%018d' 0 > "$S/Inbox/archiv.zip"
 
-# exit code 4: done, but files wait in _Prüfen (here: the duplicate and the broken zip)
+# exit code 4: done, but files wait in _Review (here: the duplicate and the broken zip)
 rc=0; ORDNIG_SRC=$S ordnig sort > "$W/sort-preview.txt" || rc=$?
 [[ $rc == 4 ]] || { cat "$W/sort-preview.txt"; fail "sort preview: exit $rc, expected 4"; }
-[[ -e $S/00_Eingang/auszug.pdf && ! -e $S/Bank/2026 ]] || fail "sort preview moved files"
+[[ -e $S/Inbox/auszug.pdf && ! -e $S/Bank/2026 ]] || fail "sort preview moved files"
 
 # exit code 3: another run holds the lock
 python3 -I -c 'import fcntl, os, sys, time
 fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT); fcntl.lockf(fd, fcntl.LOCK_EX)
-print("locked", flush=True); time.sleep(120)' "$S/00_Eingang/.ordnig/lock" > "$W/holder" &
+print("locked", flush=True); time.sleep(120)' "$S/Inbox/.ordnig/lock" > "$W/holder" &
 holder=$!
 for _ in $(seq 100); do [[ -s $W/holder ]] && break; sleep 0.1; done
 rc=0; ORDNIG_SRC=$S ordnig sort > "$W/sort-locked.txt" 2>&1 || rc=$?
@@ -118,14 +123,14 @@ kill "$holder"; wait "$holder" 2>/dev/null || true
 
 rc=0; ORDNIG_SRC=$S ordnig sort --apply > "$W/sort.txt" || rc=$?
 [[ $rc == 4 ]] || { cat "$W/sort.txt"; fail "sort --apply: exit $rc, expected 4"; }
-for f in Versicherung/beitrag.pdf Steuer/2026/beitrag.pdf Bank/2026/auszug.pdf Bank/2026/scan.png 00_Eingang/_Prüfen/doppelt.pdf 00_Eingang/_Prüfen/archiv.zip; do
+for f in Versicherung/beitrag.pdf Steuer/2026/beitrag.pdf Bank/2026/auszug.pdf Bank/2026/scan.png Inbox/_Review/doppelt.pdf Inbox/_Review/archiv.zip; do
   [[ -s $S/$f ]] || { cat "$W/sort.txt" "$ORDNIG_OUT"/*-sort.csv; fail "sort: missing $f"; }
 done
-[[ -z $(find "$S/00_Eingang" -maxdepth 1 -type f) ]] || fail "sort left files in the inbox"
-for f in texte.json.gz protokoll.csv version.json; do
-  [[ -s $S/00_Eingang/.ordnig/$f ]] || fail "sort: missing 00_Eingang/.ordnig/$f"
+[[ -z $(find "$S/Inbox" -maxdepth 1 -type f) ]] || fail "sort left files in the inbox"
+for f in texts.json.gz sort-log.csv version.json; do
+  [[ -s $S/Inbox/.ordnig/$f ]] || fail "sort: missing Inbox/.ordnig/$f"
 done
-ORDNIG_SRC=$S ordnig sort --eval | grep -q 'Jahr richtig' || fail "sort --eval"
+ORDNIG_SRC=$S ordnig sort --eval | grep -q 'Year right' || fail "sort --eval"
 
 # check: the rule copy stays intended after a rename (matched by content), not a duplicate finding
 mv "$S/Versicherung/beitrag.pdf" "$S/Versicherung/beitrag-2026.pdf"

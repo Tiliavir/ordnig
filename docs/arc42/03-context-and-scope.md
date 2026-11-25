@@ -13,8 +13,8 @@ flowchart LR
 
 | Neighbour | Interface |
 | --- | --- |
-| Archive | Mounted at `/ablage` (one mount, or several below it); read-only for `preview`, `check`, `verify`; writable for `run` and `sort --apply`. |
-| Inbox | Folder in the archive (default `00_Eingang`); documents of any format. |
+| Archive | Mounted at `/archive` (one mount, or several below it); read-only for `preview`, `check`, `verify`; writable for `run` and `sort --apply`. |
+| Inbox | Folder in the archive (`Inbox` or `--inbox`); documents of any format; holds the state. |
 | Report folder | Mounted at `/report`, outside the archive: Markdown reports and CSVs per run. |
 | Scheduler (optional) | systemd timer, cron, NAS task scheduler; acts on the exit code ([8](08-concepts.md#exit-codes)). Notifying the owner is its job. |
 

@@ -2,6 +2,9 @@
 
 Status: Accepted (2026-11-24, proposed 2026-11-17)
 
+Point 1 partly superseded by [Defaults, no searching](ADR-20261125-defaults-no-searching.md);
+points 2 and 3 partly by [No migrations before production](ADR-20261125-no-migrations-before-production.md).
+
 ## Decision
 
 1. **One folder in the inbox:** everything that must survive a run lives in

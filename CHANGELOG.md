@@ -8,16 +8,28 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 
 ### Changed
 
+- **Breaking: English throughout.** CLI options, messages, reports, log columns and
+  values, the rules file and the container mount are English; folder names are
+  configuration ([ADR](docs/arc42/adr/ADR-20261123-english-ui-configurable-folders.md)):
+  - Mount `/archive` (was `/ablage`); options `--inbox`, `--archive-changed`, `--sample`.
+  - Inbox: `<archive>/Inbox` or `--inbox PATH`, no longer searched for; the state is
+    always `<inbox>/.ordnig/` ([ADR](docs/arc42/adr/ADR-20261125-defaults-no-searching.md)).
+    `run` and `sort --apply` stop (exit 2) when the inbox is missing instead of falling
+    back to `<archive>/.ordnig/`. For `00_Eingang` pass `--inbox`.
+  - Review folder `_Review`, configurable as `[folders] review` in `rules.toml`.
+  - State files `rules.toml`, `sort-log.csv`, `run-log.csv`, `texts.json.gz`; rule keys
+    `ignore`, `[thresholds]` (`share`, `similarity`), `[year]`, `[[rule]]` with
+    `target`, `any`, `all`, `none`, `year`, `copy`, `copy_year`; placeholder `{year}`
+    ([example](docs/rules.example.toml)).
+  - No migration before production ([ADR](docs/arc42/adr/ADR-20261125-no-migrations-before-production.md)):
+    a `.ordnig` folder with the German file names is refused (exit 2). Move it away and write `rules.toml` with the new keys.
 - `check` and `verify` skip the inbox like `run` does: unsorted mail no longer shows
   up as format risks, and filed mail no longer as "moved". Inbox entries in an older
   `manifest.sha256` are ignored, so the first `verify` after the update reports no
   missing files.
-- State format 2: `migration_log.csv` stores paths relative to the archive instead of
-  container paths (`/ablage/…`), so a different mount point no longer makes `run`
-  convert generated files again. The first `run` or `sort --apply` lifts an existing
-  log; paths outside the current archive stay as they are and are reported. Older
-  ordnig versions refuse a lifted folder (exit 2).
-- The checksum baseline for `verify` lives in `00_Eingang/.ordnig/manifest.sha256`
+- `run-log.csv` stores paths relative to the archive instead of container paths, so a
+  different mount point no longer makes `run` convert generated files again.
+- The checksum baseline for `verify` lives in `<inbox>/.ordnig/manifest.sha256`
   instead of `/report`, so it travels with the archive and its backup. Each `check`
   still leaves a copy in its report folder. A baseline in `/report` is not taken over:
   run `check` once to create a new one.
@@ -28,15 +40,19 @@ versions: [Semantic Versioning](https://semver.org/). Releasing is described in
 
 ### Added
 
-- `check` lists copies made by a `sort` rule (`kopie`) as intended duplicates in their
-  own report section (⎘ in the tree, `gewollt = ja` in `duplicates.csv`, `copy` column
-  in `files.csv`); the duplicate findings and the redundant size leave them out.
+- `check` lists copies made by a `sort` rule (`copy`) as intended duplicates in their
+  own report section (⎘ in the tree, `intended = yes` in `duplicates.csv`, `copy`
+  column in `files.csv`); the duplicate findings and the redundant size leave them out.
   They are recognised by content: `sort` records the SHA-256 of every filed document
-  in `protokoll.csv`, so renaming or moving a copy keeps it intended; one more
-  identical file is a duplicate again. A `protokoll.csv` from an older version is not
-  migrated: `sort --apply` stops (exit 2) until it is moved away.
+  in `sort-log.csv`, so renaming or moving a copy keeps it intended; one more
+  identical file is a duplicate again.
 - Warning when the state folder lies on an SMB/cifs mount with `nobrl`: the lock then
   only works on this machine, a run on another machine is not prevented.
+
+### Removed
+
+- Taking over state from `<archive>/.ordnig/` (up to 0.7) and lifting older logs; before
+  production a state folder of another format is refused instead.
 
 ## [0.8.1] - 2026-11-22
 

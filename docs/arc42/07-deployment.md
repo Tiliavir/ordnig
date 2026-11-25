@@ -10,8 +10,8 @@ flowchart LR
         A1[(share 1, e.g. with inbox)]
         A2[(share 2)]
     end
-    A1 -- "→ /ablage/share1" --> O
-    A2 -- "→ /ablage/share2" --> O
+    A1 -- "→ /archive/share1" --> O
+    A2 -- "→ /archive/share2" --> O
     R -- "→ /report" --> O
 ```
 
@@ -19,12 +19,12 @@ flowchart LR
 | --- | --- | --- |
 | On the NAS | Enough CPU and RAM; simplest | Task scheduler of the NAS starts it. |
 | On a workstation, storage mounted | Faster CPU for OCR and conversions | Shares mounted on the host; runs only while it is on. |
-| One archive mount | Archive in one share | `-v <archive>:/ablage` |
-| Several mounts | Archive spread over shares | `-v <share>:/ablage/<name>` each, always with the same names; the inbox is found as `/ablage/*/00_Eingang`. |
+| One archive mount | Archive in one share | `-v <archive>:/archive` |
+| Several mounts | Archive spread over shares | `-v <share>:/archive/<name>` each, always with the same names; pass the inbox with `--inbox /archive/<name>/<folder>` (default `/archive/Inbox`). |
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v /mnt/nas/share1:/ablage/share1 -v /mnt/nas/share2:/ablage/share2 \
+  -v /mnt/nas/share1:/archive/share1 -v /mnt/nas/share2:/archive/share2 \
   -v "$PWD/report:/report" ghcr.io/tiliavir/ordnig:<version> sort --apply
 ```
 

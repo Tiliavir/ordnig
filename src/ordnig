@@ -2,7 +2,7 @@
 # ordnig – entry point. Archive mounted at $ORDNIG_SRC, reports go to $ORDNIG_OUT.
 set -euo pipefail
 
-SRC=${ORDNIG_SRC:-/ablage}
+SRC=${ORDNIG_SRC:-/archive}
 OUT=${ORDNIG_OUT:-/report}
 LIB=${ORDNIG_LIB:-/opt/ordnig}
 STAMP=$(date +%Y-%m-%d_%H%M%S)
@@ -16,7 +16,7 @@ ordnig – checks an old file archive and adds archival copies next to the origi
   run [opts]         report, convert, report again, store fresh checksums.
   check              report only. Skips the inbox, like run and verify.
   verify             compare against the stored checksums (<inbox>/.ordnig/manifest.sha256).
-  sort [opts]        file the inbox (00_Eingang) into the archive. Preview unless --apply.
+  sort [opts]        file the inbox into the archive. Preview unless --apply.
   version            versions of ordnig and the bundled tools.
 
 Options for run (passed to the converter):
@@ -24,20 +24,21 @@ Options for run (passed to the converter):
   --lang deu+eng     Tesseract languages (default deu+eng; also: frk, fra, ita)
   --fix-scans        rotate and deskew scans (about 40% more OCR time)
   -j N               files in parallel (default: number of CPUs)
-  --eingang PATH     inbox, if not $SRC/00_Eingang or $SRC/*/00_Eingang
+  --inbox PATH       inbox (default $SRC/Inbox)
 
 Options for sort:
   --apply            really move the files (otherwise preview)
   --eval             measure on the archive itself how well sorting works
-  --eingang PATH     inbox (default $SRC/00_Eingang or $SRC/*/00_Eingang)
-  --ablage-geaendert many known documents are gone on purpose (archive reorganised)
+  --inbox PATH       inbox (default $SRC/Inbox)
+  --sample N         documents for --eval (default 2000)
+  --archive-changed  many known documents are gone on purpose (archive reorganised)
 
 Exit codes: 0 done · 1 errors in single files (sort, run) or changed/missing files
-(verify) · 2 wrong call or setup (not mounted, read-only, bad regeln.toml, data from a
-newer version) · 3 another run holds the lock · 4 sort: files wait in _Prüfen
+(verify) · 2 wrong call or setup (not mounted, read-only, bad rules.toml, data from a
+newer or older version) · 3 another run holds the lock · 4 sort: files wait in the review folder
 
-State between runs (rules, learned texts, logs, checksums, lock) lives in <inbox>/.ordnig/;
-an archive without inbox keeps it in $SRC/.ordnig/.
+State between runs (rules, learned texts, logs, checksums, lock) lives in <inbox>/.ordnig/
+(inbox: $SRC/Inbox or --inbox; run and sort need it to exist).
 
 Mounts: archive -> $SRC, reports -> $OUT
 EOF
@@ -48,12 +49,12 @@ need_dirs() {
   mkdir -p "$OUT" || { echo "Report dir $OUT not writable" >&2; exit 2; }
 }
 
-INBOX=()    # --eingang from the options, so check finds the log of run
+INBOX=()    # --inbox from the options, so check finds the log of run
 inbox_arg() {
   while (( $# )); do
     case $1 in
-      --eingang) (( $# > 1 )) && INBOX=(--eingang "$2"); shift ;;
-      --eingang=*) INBOX=("$1") ;;
+      --inbox) (( $# > 1 )) && INBOX=(--inbox "$2"); shift ;;
+      --inbox=*) INBOX=("$1") ;;
     esac
     shift
   done
@@ -76,10 +77,13 @@ baseline() {
 
 store_manifest() {
   [[ -f $LAST_CHECK/manifest.sha256 ]] || return 0
-  if mkdir -p "$(dirname "$BASELINE")" 2>/dev/null && cp "$LAST_CHECK/manifest.sha256" "$BASELINE.tmp" 2>/dev/null; then
+  local inbox; inbox=$(dirname "$(dirname "$BASELINE")")
+  if [[ ! -d $inbox ]]; then
+    echo "Checksums not stored: inbox $inbox missing – create it or pass --inbox" >&2
+  elif mkdir -p "$(dirname "$BASELINE")" 2>/dev/null && cp "$LAST_CHECK/manifest.sha256" "$BASELINE.tmp" 2>/dev/null; then
     mv "$BASELINE.tmp" "$BASELINE"
   else
-    echo "Prüfsummen nicht gespeichert: $(dirname "$BASELINE") nicht beschreibbar (Ablage :ro?)" >&2
+    echo "Checksums not stored: $(dirname "$BASELINE") not writable (archive :ro?)" >&2
   fi
 }
 
@@ -89,28 +93,28 @@ case $cmd in check|run|verify) need_dirs; baseline ;; esac
 case $cmd in
   preview)
     need_dirs
-    check check "Prüfung"
+    check check "Check"
     echo
     "${PY[@]}" "$LIB/migrate.py" "$SRC" --report "$OUT/$STAMP-plan.md" "$@"
     ;;
   run)
     need_dirs
     [[ -w $SRC ]] || { echo "Archive is read-only – remove :ro for run" >&2; exit 2; }
-    check before "Prüfung vorher" --quiet
+    check before "Check before" --quiet
     rc=0
     "${PY[@]}" "$LIB/migrate.py" "$SRC" --apply --report "$OUT/$STAMP-migration.md" "$@" || rc=$?
     (( rc == 1 )) || (( rc == 0 )) || exit "$rc"     # 2/3: nothing was converted
     echo
-    check after "Prüfung nachher"
+    check after "Check after"
     store_manifest
     exit "$rc"
     ;;
   check)
-    need_dirs; check check "Prüfung" "$@"; [[ -f $BASELINE ]] || store_manifest ;;
+    need_dirs; check check "Check" "$@"; [[ -f $BASELINE ]] || store_manifest ;;
   verify)
     need_dirs
     [[ -f $BASELINE ]] || { echo "No $BASELINE yet – run 'check' or 'run' first" >&2; exit 2; }
-    check verify "Bitrot-Prüfung" --verify "$BASELINE"
+    check verify "Bit rot check" --verify "$BASELINE"
     ;;
   sort)
     need_dirs

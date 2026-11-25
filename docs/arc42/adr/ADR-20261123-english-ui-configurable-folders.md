@@ -2,6 +2,8 @@
 
 Status: Accepted (2026-11-24, proposed 2026-11-23)
 
+Inbox lookup in point 2 superseded by [Defaults, no searching](ADR-20261125-defaults-no-searching.md).
+
 ## Decision
 
 1. **English:** everything ordnig shows or reads is English: CLI options and messages,

@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-ablage_check.py – Prüft eine (alte) Dateiablage auf Langlebigkeit und Konsistenz.
+check.py – checks an (old) file archive for longevity and consistency.
 
-Nur Python-Standardbibliothek. Optional genutzt, falls installiert:
-  - `file`  (libmagic)  -> erkennt echten Dateityp, findet falsche Endungen
-  - `sf`    (siegfried) -> PRONOM-IDs, wird nur gemeldet, nicht benötigt
+Python standard library only. Optionally used if installed:
+  - `file`  (libmagic)  -> detects the real file type, finds wrong extensions
+  - `sf`    (siegfried) -> PRONOM IDs, only reported, not needed
 
-Aufruf:
-  python3 check.py /pfad/zur/ablage            # Bericht + Manifest
-  python3 check.py /pfad --out bericht_2026    # eigenes Ausgabeverzeichnis
-  python3 check.py /pfad --verify alt/manifest.sha256   # Bitrot-Prüfung
-  python3 check.py /pfad --no-hash             # schnell, ohne Prüfsummen
+Usage:
+  python3 check.py /path/to/archive            # report + manifest
+  python3 check.py /path --out report_2026     # own output folder
+  python3 check.py /path --verify old/manifest.sha256   # bit rot check
+  python3 check.py /path --no-hash             # fast, without checksums
 
-Ausgabe (im Ordner --out, Standard ./ablage_report):
-  report.md          Zusammenfassung mit Befunden
-  files.csv          eine Zeile pro Datei (Pfad, Größe, Datum, Typ, Risiko, Befunde)
-  manifest.sha256    Prüfsummen (sha256sum-kompatibel) für spätere Fixity-Checks
-  duplicates.csv     Gruppen identischer Dateien (gewollt = Regel-Kopien von sort)
+Output (in the --out folder, default ./archive_report):
+  report.md          summary with findings
+  files.csv          one row per file (path, size, date, type, risk, findings)
+  manifest.sha256    checksums (sha256sum compatible) for later fixity checks
+  duplicates.csv     groups of identical files (intended = rule copies of sort)
 """
 import argparse, csv, re, hashlib, os, shutil, subprocess, sys, time, unicodedata, zipfile
 from collections import Counter, defaultdict
@@ -26,71 +26,71 @@ import importlib.util
 _spec = importlib.util.spec_from_file_location("state", Path(__file__).resolve().parent / "state.py")
 state = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(state)
 
-# ---------------------------------------------------------------- Formatbewertung
-# ok      = offen/weit verbreitet, archivtauglich
-# watch   = verbreitet, aber proprietär/komplex – beobachten, ggf. Zweitformat
-# risk    = veraltet/proprietär – migrieren empfohlen
+# ---------------------------------------------------------------- Format rating
+# ok      = open/widespread, fit for archiving
+# watch   = widespread, but proprietary/complex – watch, maybe a second format
+# risk    = outdated/proprietary – migration recommended
 FORMATS = {
-    # Text & Dokumente
+    # Text & documents
     "txt": ("ok", "Text"), "md": ("ok", "Text"), "csv": ("ok", "Text"), "tsv": ("ok", "Text"),
     "xml": ("ok", "Text"), "json": ("ok", "Text"), "html": ("ok", "Text"), "htm": ("ok", "Text"),
-    "rtf": ("watch", "Dokument"), "pdf": ("watch", "Dokument (PDF/A prüfen)"),
-    "odt": ("ok", "Dokument"), "ods": ("ok", "Tabelle"), "odp": ("ok", "Präsentation"),
-    "docx": ("watch", "Dokument"), "xlsx": ("watch", "Tabelle"), "pptx": ("watch", "Präsentation"),
+    "rtf": ("watch", "Document"), "pdf": ("watch", "Document (check PDF/A)"),
+    "odt": ("ok", "Document"), "ods": ("ok", "Spreadsheet"), "odp": ("ok", "Presentation"),
+    "docx": ("watch", "Document"), "xlsx": ("watch", "Spreadsheet"), "pptx": ("watch", "Presentation"),
     "doc": ("risk", "Word 97-2003"), "xls": ("risk", "Excel 97-2003"), "ppt": ("risk", "PowerPoint 97-2003"),
-    "dot": ("risk", "Word-Vorlage alt"), "pps": ("risk", "PowerPoint-Show alt"),
-    "docm": ("risk", "Word mit Makros"), "xlsm": ("risk", "Excel mit Makros"),
-    "wps": ("risk", "MS Works"), "wks": ("risk", "MS Works Tabelle"), "wdb": ("risk", "MS Works DB"),
+    "dot": ("risk", "old Word template"), "pps": ("risk", "old PowerPoint show"),
+    "docm": ("risk", "Word with macros"), "xlsm": ("risk", "Excel with macros"),
+    "wps": ("risk", "MS Works"), "wks": ("risk", "MS Works spreadsheet"), "wdb": ("risk", "MS Works DB"),
     "wri": ("risk", "Windows Write"), "wpd": ("risk", "WordPerfect"), "wp": ("risk", "WordPerfect"),
     "lwp": ("risk", "Lotus WordPro"), "123": ("risk", "Lotus 1-2-3"), "wk1": ("risk", "Lotus 1-2-3"),
     "sdw": ("risk", "StarOffice"), "sdc": ("risk", "StarOffice"), "sxw": ("risk", "OpenOffice 1.x"),
     "sxc": ("risk", "OpenOffice 1.x"), "pages": ("risk", "Apple Pages"), "numbers": ("risk", "Apple Numbers"),
     "key": ("risk", "Apple Keynote"), "pub": ("risk", "MS Publisher"), "one": ("risk", "OneNote"),
     "xps": ("risk", "XPS"), "oxps": ("risk", "XPS"), "djvu": ("watch", "DjVu"),
-    "mdb": ("risk", "Access-DB"), "accdb": ("risk", "Access-DB"), "dbf": ("watch", "dBase"),
-    "msg": ("risk", "Outlook-Mail"), "pst": ("risk", "Outlook-Archiv"), "ost": ("risk", "Outlook-Cache"),
-    "eml": ("ok", "Mail"), "mbox": ("ok", "Mail"), "vcf": ("ok", "Kontakt"), "ics": ("ok", "Kalender"),
-    "lnk": ("risk", "Windows-Verknüpfung"), "url": ("watch", "Web-Verknüpfung"),
-    # Bilder
-    "tif": ("ok", "Bild"), "tiff": ("ok", "Bild"), "png": ("ok", "Bild"), "jpg": ("ok", "Bild"),
-    "jpeg": ("ok", "Bild"), "gif": ("ok", "Bild"), "svg": ("ok", "Vektor"), "jp2": ("ok", "Bild"),
-    "webp": ("watch", "Bild"), "heic": ("watch", "Bild (HEIF)"), "heif": ("watch", "Bild (HEIF)"),
-    "bmp": ("watch", "Bild unkomprimiert"), "dng": ("ok", "RAW offen"),
+    "mdb": ("risk", "Access DB"), "accdb": ("risk", "Access DB"), "dbf": ("watch", "dBase"),
+    "msg": ("risk", "Outlook mail"), "pst": ("risk", "Outlook archive"), "ost": ("risk", "Outlook cache"),
+    "eml": ("ok", "Mail"), "mbox": ("ok", "Mail"), "vcf": ("ok", "Contact"), "ics": ("ok", "Calendar"),
+    "lnk": ("risk", "Windows shortcut"), "url": ("watch", "Web shortcut"),
+    # Images
+    "tif": ("ok", "Image"), "tiff": ("ok", "Image"), "png": ("ok", "Image"), "jpg": ("ok", "Image"),
+    "jpeg": ("ok", "Image"), "gif": ("ok", "Image"), "svg": ("ok", "Vector"), "jp2": ("ok", "Image"),
+    "webp": ("watch", "Image"), "heic": ("watch", "Image (HEIF)"), "heif": ("watch", "Image (HEIF)"),
+    "bmp": ("watch", "Image uncompressed"), "dng": ("ok", "RAW open"),
     "cr2": ("watch", "RAW Canon"), "cr3": ("watch", "RAW Canon"), "nef": ("watch", "RAW Nikon"),
     "arw": ("watch", "RAW Sony"), "orf": ("watch", "RAW Olympus"), "raf": ("watch", "RAW Fuji"),
     "rw2": ("watch", "RAW Panasonic"), "psd": ("watch", "Photoshop"), "xcf": ("watch", "GIMP"),
     "pcx": ("risk", "PCX"), "pct": ("risk", "Mac PICT"), "pict": ("risk", "Mac PICT"),
     "tga": ("watch", "Targa"), "wmf": ("risk", "Windows Metafile"), "emf": ("risk", "Windows Metafile"),
     "cdr": ("risk", "CorelDRAW"), "ai": ("watch", "Illustrator"), "eps": ("watch", "EPS"),
-    "ico": ("watch", "Icon"), "thm": ("watch", "Kamera-Thumbnail"),
+    "ico": ("watch", "Icon"), "thm": ("watch", "Camera thumbnail"),
     # Audio/Video
     "wav": ("ok", "Audio"), "flac": ("ok", "Audio"), "mp3": ("ok", "Audio"), "ogg": ("ok", "Audio"),
     "opus": ("ok", "Audio"), "m4a": ("watch", "Audio"), "aac": ("watch", "Audio"), "aiff": ("ok", "Audio"),
     "wma": ("risk", "Windows Media Audio"), "ra": ("risk", "RealAudio"), "rm": ("risk", "RealMedia"),
     "mid": ("ok", "MIDI"), "midi": ("ok", "MIDI"),
     "mp4": ("watch", "Video"), "mkv": ("ok", "Video"), "mov": ("watch", "Video"), "webm": ("ok", "Video"),
-    "avi": ("watch", "Video (Codec prüfen)"), "wmv": ("risk", "Windows Media Video"),
-    "mpg": ("watch", "Video"), "mpeg": ("watch", "Video"), "3gp": ("risk", "Handyvideo alt"),
-    "flv": ("risk", "Flash-Video"), "swf": ("risk", "Flash"), "vob": ("watch", "DVD-Video"),
+    "avi": ("watch", "Video (check codec)"), "wmv": ("risk", "Windows Media Video"),
+    "mpg": ("watch", "Video"), "mpeg": ("watch", "Video"), "3gp": ("risk", "old phone video"),
+    "flv": ("risk", "Flash video"), "swf": ("risk", "Flash"), "vob": ("watch", "DVD video"),
     "mts": ("watch", "AVCHD"), "m2ts": ("watch", "AVCHD"),
-    # Archive / Container
-    "zip": ("ok", "Archiv"), "tar": ("ok", "Archiv"), "gz": ("ok", "Archiv"), "7z": ("watch", "Archiv"),
-    "bz2": ("ok", "Archiv"), "xz": ("ok", "Archiv"), "rar": ("risk", "RAR proprietär"),
+    # Archives / containers
+    "zip": ("ok", "Archive"), "tar": ("ok", "Archive"), "gz": ("ok", "Archive"), "7z": ("watch", "Archive"),
+    "bz2": ("ok", "Archive"), "xz": ("ok", "Archive"), "rar": ("risk", "RAR proprietary"),
     "ace": ("risk", "ACE"), "arj": ("risk", "ARJ"), "lzh": ("risk", "LHA"), "lha": ("risk", "LHA"),
     "cab": ("risk", "CAB"), "sit": ("risk", "StuffIt"), "sitx": ("risk", "StuffIt"),
-    "iso": ("watch", "Image"), "img": ("watch", "Image"), "dmg": ("risk", "Mac-Image"),
-    "nrg": ("risk", "Nero-Image"), "bin": ("watch", "Binär/Image"), "cue": ("ok", "Cue-Sheet"),
-    # Sonstiges
+    "iso": ("watch", "Image"), "img": ("watch", "Image"), "dmg": ("risk", "Mac image"),
+    "nrg": ("risk", "Nero image"), "bin": ("watch", "Binary/image"), "cue": ("ok", "Cue sheet"),
+    # Other
     "ged": ("ok", "GEDCOM"), "kml": ("ok", "Geo"), "gpx": ("ok", "Geo"), "kmz": ("ok", "Geo"),
-    "fit": ("watch", "Garmin FIT"), "epub": ("ok", "E-Book"), "mobi": ("risk", "Kindle alt"),
-    "azw": ("risk", "Kindle DRM"), "chm": ("risk", "Windows-Hilfe"), "hlp": ("risk", "Windows-Hilfe alt"),
+    "fit": ("watch", "Garmin FIT"), "epub": ("ok", "E-book"), "mobi": ("risk", "old Kindle"),
+    "azw": ("risk", "Kindle DRM"), "chm": ("risk", "Windows help"), "hlp": ("risk", "old Windows help"),
 }
 JUNK = {"thumbs.db", "desktop.ini", ".ds_store", "ehthumbs.db", "~$", ".~lock", "._"}
 WIN_BAD = set('<>:"|?*')
 WIN_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 MOJIBAKE = ("Ã¤", "Ã¶", "Ã¼", "Ã„", "Ã–", "Ãœ", "ÃŸ", "Ã©", "â€", "Â ")
 
-# Erwartete MIME-Präfixe je Endung (für Endung-vs-Inhalt-Prüfung)
+# Expected MIME prefixes per extension (for the extension-vs-content check)
 MIME_EXPECT = {
     "pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
     "gif": "image/gif", "tif": "image/tiff", "tiff": "image/tiff", "zip": "application/zip",
@@ -105,83 +105,83 @@ MIME_EXPECT = {
     "rar": "application/x-rar", "7z": "application/x-7z",
 }
 
-# ---------------------------------------------------------------- Integritätsprüfungen
+# ---------------------------------------------------------------- Integrity checks
 def tail(fp, n=1024):
     fp.seek(0, 2); size = fp.tell(); fp.seek(max(0, size - n)); return fp.read()
 
 def check_integrity(path: Path, ext: str):
-    """Leichte Strukturprüfung. Liefert Liste von Befunden."""
+    """Light structure check. Returns a list of findings."""
     issues = []
     try:
         with open(path, "rb") as f:
             head = f.read(16)
             if ext == "pdf":
                 if not head.startswith(b"%PDF"):
-                    issues.append("PDF-Header fehlt")
+                    issues.append("PDF header missing")
                 elif b"%%EOF" not in tail(f, 2048):
-                    issues.append("PDF abgeschnitten (kein %%EOF)")
+                    issues.append("PDF truncated (no %%EOF)")
                 else:
                     f.seek(0); blob = f.read(200_000)
-                    if b"/Encrypt" in blob: issues.append("PDF verschlüsselt")
+                    if b"/Encrypt" in blob: issues.append("PDF encrypted")
                     m = re.search(rb'pdfaid:part(?:="|>)(\d)', blob)
                     if m:
                         c = re.search(rb'pdfaid:conformance(?:="|>)([ABUabu])', blob)
                         issues.append(f"info:PDF/A-{m.group(1).decode()}{c.group(1).decode().lower() if c else ''}")
             elif ext in ("jpg", "jpeg"):
-                if not head.startswith(b"\xff\xd8"): issues.append("JPEG-Header fehlt")
-                elif b"\xff\xd9" not in tail(f, 64): issues.append("JPEG abgeschnitten (kein EOI)")
+                if not head.startswith(b"\xff\xd8"): issues.append("JPEG header missing")
+                elif b"\xff\xd9" not in tail(f, 64): issues.append("JPEG truncated (no EOI)")
             elif ext == "png":
-                if not head.startswith(b"\x89PNG\r\n\x1a\n"): issues.append("PNG-Header fehlt")
-                elif b"IEND" not in tail(f, 32): issues.append("PNG abgeschnitten (kein IEND)")
+                if not head.startswith(b"\x89PNG\r\n\x1a\n"): issues.append("PNG header missing")
+                elif b"IEND" not in tail(f, 32): issues.append("PNG truncated (no IEND)")
             elif ext in ("gif",):
-                if not head[:3] == b"GIF": issues.append("GIF-Header fehlt")
+                if not head[:3] == b"GIF": issues.append("GIF header missing")
             elif ext in ("tif", "tiff"):
-                if head[:4] not in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"): issues.append("TIFF-Header fehlt")
+                if head[:4] not in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"): issues.append("TIFF header missing")
     except OSError as e:
-        issues.append(f"Lesefehler: {e.strerror}")
+        issues.append(f"read error: {e.strerror}")
         return issues
     if ext in ("zip", "docx", "xlsx", "pptx", "odt", "ods", "odp", "epub", "kmz", "jar"):
         try:
             with zipfile.ZipFile(path) as z:
                 if any(i.flag_bits & 0x1 for i in z.infolist()):
-                    issues.append("ZIP verschlüsselt")
+                    issues.append("ZIP encrypted")
                 else:
                     bad = z.testzip()
-                    if bad: issues.append(f"ZIP defekt bei {bad}")
+                    if bad: issues.append(f"ZIP broken at {bad}")
         except zipfile.BadZipFile:
-            issues.append("ZIP-Struktur defekt")
+            issues.append("ZIP structure broken")
         except (OSError, NotImplementedError, RuntimeError) as e:
-            issues.append(f"ZIP nicht prüfbar: {e}")
+            issues.append(f"ZIP cannot be checked: {e}")
     return issues
 
-# ---------------------------------------------------------------- Namensprüfungen
+# ---------------------------------------------------------------- Name checks
 def check_name(rel: str, name: str, raw_bytes: bytes):
     issues = []
     try:
         raw_bytes.decode("utf-8")
     except UnicodeDecodeError:
-        issues.append("Dateiname kein gültiges UTF-8 (alte Codepage?)")
+        issues.append("File name is not valid UTF-8 (old code page?)")
     if any(m in name for m in MOJIBAKE):
-        issues.append("Mojibake im Namen (z. B. Ã¤ statt ä)")
+        issues.append("Mojibake in the name (e.g. Ã¤ instead of ä)")
     if unicodedata.normalize("NFC", name) != name:
-        issues.append("Unicode NFD (Mac-Schreibweise) – Duplikat-/Sync-Gefahr")
+        issues.append("Unicode NFD (Mac spelling) – risk of duplicates/sync problems")
     if set(name) & WIN_BAD:
-        issues.append("Zeichen ungültig unter Windows (<>:\"?* oder Pipe)")
+        issues.append("Characters invalid on Windows (<>:\"?* or pipe)")
     if name != name.rstrip(" ."):
-        issues.append("Endet mit Leerzeichen/Punkt")
+        issues.append("Ends with a space/dot")
     if name != name.lstrip(" "):
-        issues.append("Beginnt mit Leerzeichen")
+        issues.append("Starts with a space")
     if name.split(".")[0].upper() in WIN_RESERVED:
-        issues.append("Reservierter Windows-Name")
+        issues.append("Reserved Windows name")
     if any(ord(c) < 32 for c in name):
-        issues.append("Steuerzeichen im Namen")
+        issues.append("Control characters in the name")
     if len(rel) > 240:
-        issues.append(f"Pfad sehr lang ({len(rel)} Zeichen, Windows-Limit 260)")
+        issues.append(f"Path very long ({len(rel)} characters, Windows limit 260)")
     if len(name.encode("utf-8", "surrogateescape")) > 255:
-        issues.append("Name > 255 Byte")
+        issues.append("Name > 255 bytes")
     return issues
 
-# ---------------------------------------------------------------- MIME per libmagic
+# ---------------------------------------------------------------- MIME via libmagic
 def detect_mimes(paths):
     if not shutil.which("file") or not paths:
         return {}
@@ -212,26 +212,26 @@ def sha256(path, bufsize=1 << 20):
             h.update(chunk)
     return h.hexdigest()
 
-# ---------------------------------------------------------------- Regel-Kopien
+# ---------------------------------------------------------------- Rule copies
 def rule_copies(inbox):
-    """Inhalte, die sort per Regel (kopie) mehrfach abgelegt hat: SHA-256 -> Anzahl der Exemplare
-    {nach, kopien…}. Am Inhalt erkannt, damit Umbenennen oder Verschieben nichts ändert."""
-    log = inbox / ".ordnig" / "protokoll.csv" if inbox else None
+    """Contents that sort filed several times by a rule (copy): SHA-256 -> number of instances
+    {to, copies…}. Recognised by content, so renaming or moving changes nothing."""
+    log = inbox / state.STATE / "sort-log.csv" if inbox else None
     if not log or not log.is_file():
         return {}
     counts = {}
     with open(log, encoding="utf-8", newline="", errors="surrogateescape") as f:
         for r in csv.DictReader(f):
-            if r.get("status") != "abgelegt" or not r.get("kopien") or not r.get("sha256"):
+            if r.get("status") != "filed" or not r.get("copies") or not r.get("sha256"):
                 continue
-            n = 1 + sum(1 for k in r["kopien"].split(" | ") if k)
+            n = 1 + sum(1 for k in r["copies"].split(" | ") if k)
             counts[r["sha256"]] = max(counts.get(r["sha256"], 0), n)
     return counts
 
 
 def intended(digest, group, copies):
-    """Gewollt, wenn eine Regel diesen Inhalt mindestens so oft abgelegt hat; ein weiteres Exemplar
-    macht die Gruppe wieder zum Befund."""
+    """Intended if a rule filed this content at least that many times; one more instance makes
+    the group a finding again."""
     return len(group) <= copies.get(digest, 0)
 
 
@@ -240,7 +240,7 @@ def in_skip(p: Path, skip):
     return any(p == s or s in p.parents for s in skip)
 
 def scan(root: Path, args, skip=()):
-    """skip: absolute Ordner, die nicht geprüft werden (der Eingang: noch nicht abgelegte Post)."""
+    """skip: absolute folders that are not checked (the inbox: mail not filed yet)."""
     skip = {Path(s) for s in skip}
     files, empty_dirs, dir_errors = [], [], []
     case_map = defaultdict(list)
@@ -257,7 +257,7 @@ def scan(root: Path, args, skip=()):
             files.append(Path(dirpath) / n)
     return files, empty_dirs, dir_errors, case_map
 
-# ---------------------------------------------------------------- Ausgabe
+# ---------------------------------------------------------------- Output
 def hs(n):
     for u in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024: return f"{n:.0f} {u}" if u == "B" else f"{n:.1f} {u}"
@@ -265,10 +265,10 @@ def hs(n):
     return f"{n:.1f} PB"
 
 def num(n):
-    return f"{n:,}".replace(",", ".")
+    return f"{n:,}"
 
 def progress(msg):
-    """Fortschritt nur im Terminal, eine Zeile, wird überschrieben."""
+    """Progress only in a terminal, one line, overwritten."""
     if sys.stderr.isatty():
         sys.stderr.write("\r\033[K" + msg[:100]); sys.stderr.flush()
 
@@ -277,7 +277,7 @@ def progress_done():
         sys.stderr.write("\r\033[K"); sys.stderr.flush()
 
 def console_table(title, rows, footer=()):
-    """rows: (label, value, value2) – None = Trennlinie."""
+    """rows: (label, value, value2) – None = separator."""
     data = [r for r in rows if r is not None]
     w = [max(len(str(r[i])) for r in data + [("", "", "")]) for i in range(3)]
     w[0] = max(w[0], len(title))
@@ -291,7 +291,7 @@ def console_table(title, rows, footer=()):
 RISK_MARK = {"watch": "🟡", "risk": "🔴", "unknown": "⚪", "?": "❓", "done": "☑"}
 
 def render_tree(root_name, rows, empty_dirs, case_map, dir_errors):
-    """Baum aller Dateien; Ordnerzeilen mit Summen, Dateizeilen mit allen Befunden."""
+    """Tree of all files; folder lines with totals, file lines with all findings."""
     tree = {}
     def node(parts):
         n = tree
@@ -319,16 +319,16 @@ def render_tree(root_name, rows, empty_dirs, case_map, dir_errors):
 
     def dir_note(n, rel):
         a = n["\0agg"]
-        bits = [f"{num(a['files'])} {'Datei' if a['files'] == 1 else 'Dateien'}", hs(a["size"])] if a["files"] else ["leer"]
+        bits = [f"{num(a['files'])} {'file' if a['files'] == 1 else 'files'}", hs(a["size"])] if a["files"] else ["empty"]
         if a["risk"]: bits.append(f"🔴 {num(a['risk'])}")
         if a["issues"]: bits.append(f"⚠ {num(a['issues'])}")
-        if case_map.get(rel): bits.append("⚠ Namenskollision: " + ", ".join(case_map[rel]))
+        if case_map.get(rel): bits.append("⚠ name collision: " + ", ".join(case_map[rel]))
         return " · ".join(bits)
 
     def file_note(r):
         bits = [hs(r["size"]), r["mtime"]] if r["mtime"] else [hs(r["size"])]
         if r["risk"] in RISK_MARK:
-            bits.append(f"{RISK_MARK[r['risk']]} {r['kind'] or '.' + r['ext'] or 'ohne Endung'}"
+            bits.append(f"{RISK_MARK[r['risk']]} {r['kind'] or '.' + r['ext'] or 'no extension'}"
                         + (f" → {SUGGEST[r['ext']]}" if r["ext"] in SUGGEST and r["risk"] != "done" else ""))
         elif r["kind"].startswith("PDF/A"):
             bits.append(f"✅ {r['kind']}")
@@ -353,60 +353,61 @@ def render_tree(root_name, rows, empty_dirs, case_map, dir_errors):
                 out.append(f"{prefix}{branch}{k}  {file_note(v)}")
     walk(tree, "", ".")
     for e in dir_errors:
-        out.append(f"⚠ nicht lesbar: {e}")
+        out.append(f"⚠ not readable: {e}")
     return out
 
 SUGGEST = {"doc": "ODT + PDF/A", "xls": "ODS", "ppt": "ODP + PDF/A",
            "wps": "ODT + PDF/A", "wri": "ODT", "wpd": "ODT + PDF/A", "lwp": "ODT + PDF/A",
            "sxw": "ODT", "sxc": "ODS", "sdw": "ODT", "sdc": "ODS", "mdb": "SQLite + CSV",
            "accdb": "SQLite + CSV", "wma": "FLAC/Opus", "wmv": "MKV/MP4", "rm": "MKV/MP4",
-           "ra": "FLAC/Opus", "flv": "MP4", "3gp": "MP4", "rar": "auspacken → ZIP/TAR",
-           "ace": "auspacken → ZIP/TAR", "arj": "auspacken → ZIP/TAR", "lzh": "auspacken → ZIP/TAR",
-           "sit": "auspacken → ZIP/TAR", "cab": "auspacken", "msg": "EML", "pst": "MBOX/EML",
+           "ra": "FLAC/Opus", "flv": "MP4", "3gp": "MP4", "rar": "unpack → ZIP/TAR",
+           "ace": "unpack → ZIP/TAR", "arj": "unpack → ZIP/TAR", "lzh": "unpack → ZIP/TAR",
+           "sit": "unpack → ZIP/TAR", "cab": "unpack", "msg": "EML", "pst": "MBOX/EML",
            "pct": "PNG/TIFF", "pcx": "PNG", "wmf": "SVG/PNG", "emf": "SVG/PNG", "cdr": "SVG + PDF",
            "xps": "PDF/A", "pages": "ODT/PDF", "numbers": "ODS/CSV", "key": "PDF", "pub": "PDF/A",
-           "mobi": "EPUB", "chm": "HTML/PDF", "hlp": "HTML/PDF", "dmg": "auspacken", "nrg": "ISO",
-           "docm": "ODT (Makros prüfen)", "xlsm": "ODS (Makros prüfen)", "lnk": "löschen/dokumentieren"}
+           "mobi": "EPUB", "chm": "HTML/PDF", "hlp": "HTML/PDF", "dmg": "unpack", "nrg": "ISO",
+           "docm": "ODT (check macros)", "xlsm": "ODS (check macros)", "lnk": "delete/document"}
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", type=Path)
-    ap.add_argument("--out", type=Path, default=Path("ablage_report"))
-    ap.add_argument("--no-hash", action="store_true", help="keine Prüfsummen/Duplikate (schneller)")
-    ap.add_argument("--no-integrity", action="store_true", help="keine Strukturprüfung")
-    ap.add_argument("--verify", type=Path, help="früheres manifest.sha256 gegen Bestand prüfen")
-    ap.add_argument("--quiet", action="store_true", help="keine Tabelle auf der Konsole")
-    ap.add_argument("--title", default="Prüfung", help="Titel der Konsolentabelle")
-    ap.add_argument("--eingang", type=Path, default=None, help="Eingangsordner mit .ordnig/ (Protokoll von run)")
+    ap.add_argument("--out", type=Path, default=Path("archive_report"))
+    ap.add_argument("--no-hash", action="store_true", help="no checksums/duplicates (faster)")
+    ap.add_argument("--no-integrity", action="store_true", help="no structure check")
+    ap.add_argument("--verify", type=Path, help="check an earlier manifest.sha256 against the files")
+    ap.add_argument("--quiet", action="store_true", help="no table on the console")
+    ap.add_argument("--title", default="Check", help="title of the console table")
+    ap.add_argument("--inbox", type=Path, default=None, help="inbox folder with .ordnig/ (log of run)")
     args = ap.parse_args()
 
     root = args.root.resolve()
     if not root.is_dir():
-        sys.exit(f"Kein Verzeichnis: {root}")
+        sys.exit(f"Not a folder: {root}")
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
-    progress(f"Scanne {root} …")
-    inbox = state.find_inbox(root, args.eingang)
+    progress(f"Scanning {root} …")
+    inbox = state.inbox_dir(root, args.inbox)
+    inbox = inbox if inbox.is_dir() else None
     skip = [inbox] if inbox and inbox != root else []
     paths, empty_dirs, dir_errors, case_map = scan(root, args, skip)
-    progress(f"{num(len(paths))} Dateien, erkenne Typen …")
+    progress(f"{num(len(paths))} files, detecting types …")
     mimes = detect_mimes(paths)
 
-    # Bereits migrierte Originale (aus dem Protokoll von migrate.py)
+    # Originals already converted (from the log of migrate.py)
     migrated = defaultdict(list)
-    log = state.state_dir(root, args.eingang) / "migration_log.csv"
-    for log in [p for p in (state.legacy(root, log.parent, log.name), log) if p and p.exists()]:
+    log = state.state_dir(root, args.inbox) / state.LOG_NAME
+    if log.exists():
         for r in csv.DictReader(open(log, encoding="utf-8", errors="surrogateescape")):
-            ziel = state.to_abs(r["ziel"], root)
-            if r["status"] == "ok" and ziel and Path(ziel).exists():
-                migrated[os.path.relpath(state.to_abs(r["quelle"], root), root)].append(Path(ziel).name)
+            target = state.to_abs(r.get("target", ""), root)
+            if r.get("status") == "ok" and target and Path(target).exists():
+                migrated[os.path.relpath(state.to_abs(r["source"], root), root)].append(Path(target).name)
 
     rows, hashes = [], {}
     now = time.time()
     for i, p in enumerate(paths, 1):
         if i % 500 == 0:
-            progress(f"Analysiere {num(i)}/{num(len(paths))}")
+            progress(f"Analysing {num(i)}/{num(len(paths))}")
         rel = str(p.relative_to(root))
         name = p.name
         ext = name.rsplit(".", 1)[-1].lower() if "." in name.lstrip(".") else ""
@@ -417,26 +418,26 @@ def main():
             rows.append(dict(path=rel, size=0, mtime="", ext=ext, mime="", risk="?", kind="", issues=f"stat: {e}"))
             continue
         if p.is_symlink():
-            issues.append("Symlink" + (" (kaputt)" if not p.exists() else ""))
+            issues.append("Symlink" + (" (broken)" if not p.exists() else ""))
             rows.append(dict(path=rel, size=0, mtime="", ext=ext, mime="", risk="?", kind="Symlink", issues="; ".join(issues)))
             continue
         size = st.st_size
         mt = st.st_mtime
-        if size == 0: issues.append("Leere Datei (0 Byte)")
-        if mt > now + 86400: issues.append("Änderungsdatum in der Zukunft")
-        if mt < 315532800: issues.append("Änderungsdatum vor 1980 (verdächtig)")
+        if size == 0: issues.append("Empty file (0 bytes)")
+        if mt > now + 86400: issues.append("Modification date in the future")
+        if mt < 315532800: issues.append("Modification date before 1980 (suspicious)")
         low = name.lower()
         if low in JUNK or any(low.startswith(j) for j in ("~$", ".~lock", "._")):
-            issues.append("Systemmüll/Temp-Datei")
+            issues.append("System junk/temp file")
         if low.endswith((".tmp", ".bak", ".old", "~")):
-            issues.append("Temp/Backup-Datei")
-        if not ext: issues.append("Keine Dateiendung")
+            issues.append("Temp/backup file")
+        if not ext: issues.append("No file extension")
         risk, kind = FORMATS.get(ext, ("unknown", ""))
         if rel in migrated and risk in ("risk", "watch", "unknown"):
             risk, kind = "done", f"{kind or '.' + ext} → {', '.join(migrated[rel])}"
         mime = mimes.get(p, "")
         if mime_mismatch(ext, mime):
-            issues.append(f"Endung passt nicht zum Inhalt ({mime})")
+            issues.append(f"Extension does not match the content ({mime})")
         if not args.no_integrity and size > 0:
             for iss in check_integrity(p, ext):
                 if iss.startswith("info:PDF/A"):
@@ -447,14 +448,14 @@ def main():
         rows.append(dict(path=rel, size=size, mtime=datetime.fromtimestamp(mt).strftime("%Y-%m-%d"),
                          ext=ext, mime=mime, risk=risk, kind=kind, issues="; ".join(issues), _p=p))
 
-    # Prüfsummen (alle Dateien, fürs Manifest) – Duplikate daraus
+    # Checksums (all files, for the manifest) – duplicates from them
     dup_groups, copy_groups = [], []
     if not args.no_hash:
         todo = [r for r in rows if r.get("_p") is not None and r["size"] > 0]
         for i, r in enumerate(todo, 1):
-            if i % 200 == 0: progress(f"Prüfsummen {num(i)}/{num(len(todo))}")
+            if i % 200 == 0: progress(f"Checksums {num(i)}/{num(len(todo))}")
             try: hashes[r["_p"]] = sha256(r["_p"])
-            except OSError as e: r["issues"] += f"; Lesefehler beim Hashen: {e.strerror}"
+            except OSError as e: r["issues"] += f"; read error while hashing: {e.strerror}"
         groups = defaultdict(list)
         for p, h in hashes.items(): groups[h].append(p)
         dup_groups = sorted((g for g in groups.values() if len(g) > 1),
@@ -465,32 +466,32 @@ def main():
         by_path = {r.get("_p"): r for r in rows}
         for g in copy_groups:
             for p in g:
-                by_path[p]["copy"] = "Regel-Kopie: " + ", ".join(str(q.relative_to(root)) for q in g if q != p)
+                by_path[p]["copy"] = "rule copy: " + ", ".join(str(q.relative_to(root)) for q in g if q != p)
         for gi, g in enumerate(dup_groups, 1):
             for p in g:
                 others = [str(q.relative_to(root)) for q in g if q != p]
-                by_path[p]["dup"] = f"Duplikat (Gruppe {gi}): " + ", ".join(others[:3]) + (f" +{len(others)-3}" if len(others) > 3 else "")
+                by_path[p]["dup"] = f"duplicate (group {gi}): " + ", ".join(others[:3]) + (f" +{len(others)-3}" if len(others) > 3 else "")
         with open(args.out / "manifest.sha256", "w", encoding="utf-8", errors="surrogateescape") as m:
             for r in rows:
                 p = r.get("_p")
                 if p in hashes: m.write(f"{hashes[p]}  {r['path']}\n")
         with open(args.out / "duplicates.csv", "w", newline="", encoding="utf-8", errors="surrogateescape") as f:
-            w = csv.writer(f); w.writerow(["gruppe", "sha256", "groesse", "pfad", "gewollt"])
+            w = csv.writer(f); w.writerow(["group", "sha256", "size", "path", "intended"])
             for gi, g in enumerate(dup_groups + copy_groups, 1):
                 for p in g: w.writerow([gi, hashes[p], p.stat().st_size, str(p.relative_to(root)),
-                                        "ja" if gi > len(dup_groups) else ""])
+                                        "yes" if gi > len(dup_groups) else ""])
 
     # Fixity-Verify
     vstat = None
     if args.verify:
-        progress("Vergleiche mit altem Manifest …")
+        progress("Comparing with the old manifest …")
         by_rel = {r["path"]: r for r in rows}
         cur = {r["path"]: hashes.get(r.get("_p")) for r in rows}
         old = {}
         for line in open(args.verify, encoding="utf-8", errors="surrogateescape"):
             if "  " in line:
                 h, pth = line.rstrip("\n").split("  ", 1)
-                if not in_skip(root / pth, skip):  # ältere Manifeste enthalten noch den Eingang
+                if not in_skip(root / pth, skip):  # a manifest may still contain the inbox
                     old[pth] = h
         changed = [p for p, h in old.items() if p in cur and cur[p] and cur[p] != h]
         missing = [p for p in old if p not in cur]
@@ -499,9 +500,9 @@ def main():
         for p, h in old.items(): oldh[h].append(p)
         moved = {p: oldh[cur[p]][0] for p in new if cur[p] in oldh and oldh[cur[p]][0] in missing}
         for p in changed:
-            by_rel[p]["issues"] = "; ".join(filter(None, [by_rel[p]["issues"], "Inhalt geändert seit letzter Prüfung (Bitrot oder bearbeitet?)"]))
+            by_rel[p]["issues"] = "; ".join(filter(None, [by_rel[p]["issues"], "Content changed since the last check (bit rot or edited?)"]))
         for p in new:
-            by_rel[p]["info"] = f"verschoben von {moved[p]}" if p in moved else "neu seit letzter Prüfung"
+            by_rel[p]["info"] = f"moved from {moved[p]}" if p in moved else "new since the last check"
         gone = [p for p in missing if p not in set(moved.values())]
         vstat = dict(changed=len(changed), gone=gone, moved=len(moved), new=len(new) - len(moved))
     progress_done()
@@ -512,7 +513,7 @@ def main():
                            extrasaction="ignore")
         w.writeheader(); w.writerows(rows)
 
-    # Kennzahlen
+    # Figures
     total = sum(r["size"] for r in rows)
     risk_cnt, risk_size = Counter(), Counter()
     ext_cnt, ext_size = Counter(), Counter()
@@ -520,83 +521,83 @@ def main():
     years = Counter()
     for r in rows:
         risk_cnt[r["risk"]] += 1; risk_size[r["risk"]] += r["size"]
-        ext_cnt[r["ext"] or "(keine)"] += 1; ext_size[r["ext"] or "(keine)"] += r["size"]
+        ext_cnt[r["ext"] or "(none)"] += 1; ext_size[r["ext"] or "(none)"] += r["size"]
         if r["mtime"]: years[r["mtime"][:4]] += 1
         for iss in filter(None, (s.strip() for s in r["issues"].split(";"))):
-            key = iss.split("(")[0].strip() if "Endung passt" in iss or "Pfad sehr lang" in iss else iss
-            key = "ZIP defekt" if key.startswith("ZIP defekt bei") else key
+            key = iss.split("(")[0].strip() if "Extension does not match" in iss or "Path very long" in iss else iss
+            key = "ZIP broken" if key.startswith("ZIP broken at") else key
             issue_cnt[key] += 1
     with_issues = sum(1 for r in rows if r["issues"])
     waste = sum(g[0].stat().st_size * (len(g) - 1) for g in dup_groups)
     n_case = sum(map(len, case_map.values()))
-    labels = {"ok": "✅ archivtauglich", "done": "☑ migriert (Kopie daneben)", "watch": "🟡 beobachten",
-              "risk": "🔴 migrieren", "unknown": "⚪ unbekannt", "?": "❓ nicht lesbar"}
+    labels = {"ok": "✅ fit for archiving", "done": "☑ converted (copy next to it)", "watch": "🟡 watch",
+              "risk": "🔴 convert", "unknown": "⚪ unknown", "?": "❓ not readable"}
 
-    # Bericht: Baum, dann Zusammenfassung
-    L = [f"# Ablage-Prüfung: `{root}`", "",
-         f"Stand {datetime.now():%Y-%m-%d %H:%M} · {num(len(rows))} Dateien · {hs(total)} · Laufzeit {time.time()-t0:.0f}s", "",
-         "Legende: 🔴 migrieren · ☑ migriert · 🟡 beobachten · ⚪ unbekanntes Format · ⚠ Befund · ⧉ Duplikat · ⎘ gewollte Regel-Kopie · ℹ Hinweis. "
-         "Ordnerzeilen: Summen inkl. Unterordner. Zusammenfassung am Ende.", ""]
+    # Report: tree, then summary
+    L = [f"# Archive check: `{root}`", "",
+         f"As of {datetime.now():%Y-%m-%d %H:%M} · {num(len(rows))} files · {hs(total)} · run time {time.time()-t0:.0f}s", "",
+         "Legend: 🔴 convert · ☑ converted · 🟡 watch · ⚪ unknown format · ⚠ finding · ⧉ duplicate · ⎘ intended rule copy · ℹ note. "
+         "Folder lines: totals including subfolders. Summary at the end.", ""]
     if not shutil.which("file"):
-        L += ["> Hinweis: `file` nicht gefunden – Endung-vs-Inhalt-Prüfung übersprungen.", ""]
-    L += ["## Baum", "", "```text"] + render_tree(root.name or str(root), rows, empty_dirs, case_map, dir_errors) + ["```", ""]
+        L += ["> Note: `file` not found – extension-vs-content check skipped.", ""]
+    L += ["## Tree", "", "```text"] + render_tree(root.name or str(root), rows, empty_dirs, case_map, dir_errors) + ["```", ""]
 
-    L += ["## Zusammenfassung", "", "### Langlebigkeit der Formate", "", "| Bewertung | Dateien | Größe |", "|---|---:|---:|"]
+    L += ["## Summary", "", "### Longevity of the formats", "", "| Rating | Files | Size |", "|---|---:|---:|"]
     for k in ("ok", "done", "watch", "risk", "unknown", "?"):
         if risk_cnt[k]: L.append(f"| {labels[k]} | {num(risk_cnt[k])} | {hs(risk_size[k])} |")
     risky = Counter({e: c for e, c in ext_cnt.items() if FORMATS.get(e, ("",))[0] == "risk"})
     if risky:
-        L += ["", "**Migrationskandidaten** (Format → Vorschlag):", ""]
+        L += ["", "**Candidates for conversion** (format → suggestion):", ""]
         for e, c in risky.most_common():
-            L.append(f"- `.{e}` – {FORMATS[e][1]}: {num(c)} Dateien, {hs(ext_size[e])} → {SUGGEST.get(e, 'prüfen')}")
+            L.append(f"- `.{e}` – {FORMATS[e][1]}: {num(c)} files, {hs(ext_size[e])} → {SUGGEST.get(e, 'check')}")
     unk = Counter({e: c for e, c in ext_cnt.items() if e not in FORMATS})
     if unk:
-        L += ["", "**Unbekannte Endungen** (Top 20, bitte einordnen):", "",
+        L += ["", "**Unknown extensions** (top 20, please classify):", "",
               ", ".join(f"`.{e}` ({c})" for e, c in unk.most_common(20))]
-    L += ["", "### Top-Formate", "", "| Endung | Dateien | Größe |", "|---|---:|---:|"]
+    L += ["", "### Top formats", "", "| Extension | Files | Size |", "|---|---:|---:|"]
     for e, c in ext_cnt.most_common(15):
         L.append(f"| {e} | {num(c)} | {hs(ext_size[e])} |")
-    L += ["", "### Konsistenz & Integrität", ""]
+    L += ["", "### Consistency & integrity", ""]
     if issue_cnt:
-        L += ["| Befund | Anzahl |", "|---|---:|"] + [f"| {k} | {num(c)} |" for k, c in issue_cnt.most_common()]
+        L += ["| Finding | Count |", "|---|---:|"] + [f"| {k} | {num(c)} |" for k, c in issue_cnt.most_common()]
     else:
-        L.append("Keine Auffälligkeiten.")
-    extra = [("Namenskollisionen (Groß/Klein)", n_case), ("Leere Ordner", len(empty_dirs)), ("Nicht lesbare Ordner", len(dir_errors))]
+        L.append("Nothing found.")
+    extra = [("Name collisions (upper/lower case)", n_case), ("Empty folders", len(empty_dirs)), ("Unreadable folders", len(dir_errors))]
     L += [""] + [f"- {k}: {v}" for k, v in extra if v]
     if dup_groups:
-        L += ["", "### Duplikate", "", f"{num(len(dup_groups))} Gruppen, {hs(waste)} redundant. "
-              "Im Baum mit ⧉ markiert; alle Gruppen in `duplicates.csv`."]
+        L += ["", "### Duplicates", "", f"{num(len(dup_groups))} groups, {hs(waste)} redundant. "
+              "Marked ⧉ in the tree; all groups in `duplicates.csv`."]
     if copy_groups:
-        L += ["", "### Gewollte Duplikate", "", f"{num(len(copy_groups))} Gruppen, die `sort` per Regel (`kopie`) "
-              "mehrfach abgelegt hat. Im Baum mit ⎘ markiert, in `duplicates.csv` mit `gewollt = ja`.", ""]
+        L += ["", "### Intended duplicates", "", f"{num(len(copy_groups))} groups that `sort` filed several times "
+              "by a rule (`copy`). Marked ⎘ in the tree, in `duplicates.csv` with `intended = yes`.", ""]
         L += ["- " + " = ".join(f"`{q}`" for q in sorted(str(q.relative_to(root)) for q in g)) for g in copy_groups[:200]]
-        if len(copy_groups) > 200: L.append(f"- … {num(len(copy_groups) - 200)} weitere")
+        if len(copy_groups) > 200: L.append(f"- … {num(len(copy_groups) - 200)} more")
     if years:
-        L += ["", "### Dateien nach Änderungsjahr", "", "```text"]
+        L += ["", "### Files by year of modification", "", "```text"]
         mx = max(years.values())
         L += [f"{y} {'█' * max(1, round(40 * years[y] / mx))} {years[y]}" for y in sorted(years)] + ["```"]
     if vstat:
-        L += ["", f"### Vergleich mit `{args.verify}`", "",
-              f"- Inhalt geändert: {vstat['changed']} (im Baum mit ⚠ markiert)",
-              f"- Verschoben/umbenannt: {vstat['moved']} · neu: {vstat['new']} (ℹ im Baum)",
-              f"- Fehlt: {len(vstat['gone'])}"] + [f"  - `{p}`" for p in vstat["gone"][:200]]
+        L += ["", f"### Comparison with `{args.verify}`", "",
+              f"- Content changed: {vstat['changed']} (marked ⚠ in the tree)",
+              f"- Moved/renamed: {vstat['moved']} · new: {vstat['new']} (ℹ in the tree)",
+              f"- Missing: {len(vstat['gone'])}"] + [f"  - `{p}`" for p in vstat["gone"][:200]]
     (args.out / "report.md").write_text("\n".join(L) + "\n", encoding="utf-8", errors="replace")
 
-    code = state.FEHLER if vstat and (vstat["changed"] or vstat["gone"]) else state.OK
+    code = state.ERROR if vstat and (vstat["changed"] or vstat["gone"]) else state.OK
     if args.quiet:
         return code
-    t = [("Dateien gesamt", num(len(rows)), hs(total))]
+    t = [("Files in total", num(len(rows)), hs(total))]
     t += [(f"  {labels[k][2:]}", num(risk_cnt[k]), hs(risk_size[k])) for k in ("ok", "done", "watch", "risk", "unknown", "?") if risk_cnt[k]]
-    t += [None, ("Dateien mit Befunden", num(with_issues), "")]
+    t += [None, ("Files with findings", num(with_issues), "")]
     t += [(f"  {k[:38]}", num(c), "") for k, c in issue_cnt.most_common(5)]
-    if len(issue_cnt) > 5: t.append((f"  … {len(issue_cnt) - 5} weitere Arten", "", ""))
+    if len(issue_cnt) > 5: t.append((f"  … {len(issue_cnt) - 5} more kinds", "", ""))
     t.append(None)
-    if not args.no_hash: t.append(("Duplikat-Gruppen", num(len(dup_groups)), hs(waste) + " redundant" if waste else ""))
-    if copy_groups: t.append(("  gewollt (Regel-Kopien)", num(len(copy_groups)), ""))
+    if not args.no_hash: t.append(("Duplicate groups", num(len(dup_groups)), hs(waste) + " redundant" if waste else ""))
+    if copy_groups: t.append(("  intended (rule copies)", num(len(copy_groups)), ""))
     t += [(k, num(v), "") for k, v in extra if v]
     if vstat:
-        t += [None, ("Seit letzter Prüfung geändert", num(vstat["changed"]), ""), ("  fehlt", num(len(vstat["gone"])), ""),
-              ("  verschoben", num(vstat["moved"]), ""), ("  neu", num(vstat["new"]), "")]
+        t += [None, ("Changed since the last check", num(vstat["changed"]), ""), ("  missing", num(len(vstat["gone"])), ""),
+              ("  moved", num(vstat["moved"]), ""), ("  new", num(vstat["new"]), "")]
     console_table(args.title, t, [f"Details: {args.out / 'report.md'}"])
     return code
 

@@ -66,6 +66,6 @@ RUN chmod +x /usr/local/bin/ordnig \
 
 # Runs fine as any UID (docker run --user); LibreOffice gets a temp profile per job.
 ENV HOME=/tmp OMP_THREAD_LIMIT=1 PYTHONDONTWRITEBYTECODE=1
-VOLUME ["/ablage", "/report"]
+VOLUME ["/archive", "/report"]
 ENTRYPOINT ["tini", "--", "ordnig"]
 CMD ["preview"]
